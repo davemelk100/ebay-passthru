@@ -38,7 +38,7 @@ export default function Home() {
       </header>
 
       <div className="space-y-6">
-        <FeedView />
+        <FeedView env={cfg.env} />
         <CallPanel env={cfg.env} />
         <CrudCheck />
       </div>

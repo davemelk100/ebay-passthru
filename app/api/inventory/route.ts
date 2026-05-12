@@ -14,6 +14,7 @@ interface RawItem {
   SellingStatus?: {
     CurrentPrice?: { "#text"?: string | number; "@_currencyID"?: string } | string | number;
     QuantitySold?: string | number;
+    ListingStatus?: string;
   };
   ListingDetails?: { ViewItemURL?: string; StartTime?: string; EndTime?: string };
   PrimaryCategory?: { CategoryID?: string | number; CategoryName?: string };
@@ -38,13 +39,19 @@ interface NormalizedItem {
   pictureUrls: string[];
 }
 
+// Pulls every currently-active listing via GetSellerList using a forward
+// EndTime window. Captures all active items (including long-running GTC
+// listings) regardless of when they were originally created, because eBay
+// keeps GTC EndTime rolling within the next ~30 days.
 export async function POST(req: Request) {
   const body = (await req.json().catch(() => ({}))) as {
     entriesPerPage?: number;
     maxPages?: number;
+    daysAhead?: number;
   };
   const entriesPerPage = Math.min(200, Math.max(1, body.entriesPerPage ?? 100));
   const maxPages = Math.min(500, Math.max(1, body.maxPages ?? 50));
+  const daysAhead = Math.min(119, Math.max(1, body.daysAhead ?? 119));
 
   const cfg = readConfig();
   const missing = configIssues(cfg);
@@ -55,6 +62,10 @@ export async function POST(req: Request) {
     );
   }
 
+  const now = new Date();
+  const endFrom = now.toISOString();
+  const endTo = new Date(now.getTime() + daysAhead * 24 * 60 * 60 * 1000).toISOString();
+
   const started = Date.now();
   const items: NormalizedItem[] = [];
   let totalEntries = 0;
@@ -62,8 +73,13 @@ export async function POST(req: Request) {
   let lastPageFetched = 0;
 
   for (let page = 1; page <= maxPages; page++) {
-    const xml = `<ActiveList><Include>true</Include><Pagination><EntriesPerPage>${entriesPerPage}</EntriesPerPage><PageNumber>${page}</PageNumber></Pagination></ActiveList>`;
-    const result = await callTradingApi("GetMyeBaySelling", xml, cfg);
+    const xml =
+      `<EndTimeFrom>${endFrom}</EndTimeFrom>` +
+      `<EndTimeTo>${endTo}</EndTimeTo>` +
+      `<DetailLevel>ReturnAll</DetailLevel>` +
+      `<GranularityLevel>Fine</GranularityLevel>` +
+      `<Pagination><EntriesPerPage>${entriesPerPage}</EntriesPerPage><PageNumber>${page}</PageNumber></Pagination>`;
+    const result = await callTradingApi("GetSellerList", xml, cfg);
     lastPageFetched = page;
 
     if (!result.ok) {
@@ -81,16 +97,20 @@ export async function POST(req: Request) {
     }
 
     const parsed = result.parsed as Record<string, unknown> | null;
-    const resp = parsed?.GetMyeBaySellingResponse as Record<string, unknown> | undefined;
-    const active = resp?.ActiveList as Record<string, unknown> | undefined;
-    const itemArray = (active?.ItemArray as Record<string, unknown> | undefined)?.Item;
+    const resp = parsed?.GetSellerListResponse as Record<string, unknown> | undefined;
+    const itemArray = (resp?.ItemArray as Record<string, unknown> | undefined)?.Item;
     const rawItems = itemArray
       ? ((Array.isArray(itemArray) ? itemArray : [itemArray]) as RawItem[])
       : [];
 
-    for (const raw of rawItems) items.push(normalizeItem(raw));
+    // GetSellerList returns ended/sold items too — keep only Active.
+    for (const raw of rawItems) {
+      const status = raw.SellingStatus?.ListingStatus;
+      if (status && status !== "Active") continue;
+      items.push(normalizeItem(raw));
+    }
 
-    const pagination = active?.PaginationResult as Record<string, unknown> | undefined;
+    const pagination = resp?.PaginationResult as Record<string, unknown> | undefined;
     totalEntries = Number(pagination?.TotalNumberOfEntries ?? items.length);
     totalPages = Number(pagination?.TotalNumberOfPages ?? 1);
     if (page >= totalPages) break;
@@ -105,6 +125,7 @@ export async function POST(req: Request) {
     truncated: lastPageFetched < totalPages,
     durationMs: Date.now() - started,
     items,
+    window: { endTimeFrom: endFrom, endTimeTo: endTo, daysAhead },
   });
 }
 
