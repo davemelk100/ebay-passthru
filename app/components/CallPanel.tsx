@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { SAMPLE_BODIES } from "@/lib/samples";
+import { DESTRUCTIVE_CALLS, SAMPLE_BODIES } from "@/lib/samples";
 
 const CALLS = Object.keys(SAMPLE_BODIES);
 const PLACEHOLDER = "REPLACE_WITH_ITEM_ID";
@@ -38,7 +38,7 @@ interface ApiResult {
   hint?: string;
 }
 
-export default function CallPanel() {
+export default function CallPanel({ env }: { env: "sandbox" | "production" }) {
   const [callName, setCallName] = useState<string>("GetUser");
   const [xml, setXml] = useState<string>(SAMPLE_BODIES.GetUser ?? "");
   const [loading, setLoading] = useState(false);
@@ -64,13 +64,27 @@ export default function CallPanel() {
   }
 
   async function send() {
+    const isDestructive = DESTRUCTIVE_CALLS.has(callName);
+    const allowProduction = env === "production" && isDestructive;
+
+    if (allowProduction) {
+      const ok = window.confirm(
+        `⚠️ You're on PRODUCTION.\n\n${callName} mutates real seller data on eBay.\nProceed?`,
+      );
+      if (!ok) return;
+    }
+
     setLoading(true);
     setResult(null);
     try {
       const res = await fetch("/api/ebay", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ callName, xml }),
+        body: JSON.stringify({
+          callName,
+          xml,
+          ...(allowProduction ? { allowProduction: true } : {}),
+        }),
       });
       const data = (await res.json()) as ApiResult;
       setResult(data);

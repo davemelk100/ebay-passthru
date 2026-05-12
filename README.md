@@ -48,9 +48,25 @@ In-flight refreshes are deduped — concurrent calls share a single refresh prom
 
 ## Setup
 
+### Two accounts, two roles
+
+eBay's auth model uses two distinct accounts; mixing them up is the #1 cause of OAuth flow failures.
+
+| Account | Where you sign in | What it owns |
+| --- | --- | --- |
+| **Developer account** | https://developer.ebay.com | The *app* — App ID, Dev ID, Cert ID, RuName |
+| **Seller user account** | https://auth.ebay.com (production) or a *sandbox test user* (sandbox) | The *listings* — inventory the app reads/writes on the user's behalf |
+
+When the OAuth helper opens a consent URL, it's asking the **seller** to authorize the **app**.
+
+- **Sandbox flow** → sign in as a *sandbox test user* (create one at https://developer.ebay.com/sandbox/register). Your real eBay credentials will be rejected.
+- **Production flow** → sign in as your *real eBay user account* (the one that owns the inventory). Your developer-portal credentials will be rejected.
+
+The helper script picks which endpoint to hit based on `EBAY_ENV` in `.env.local`. Switch env → re-mint tokens.
+
 ### 1. Create an eBay developer account
 
-Sign up at https://developer.ebay.com (free). The account you sign in to the *developer portal* with is separate from the *sandbox test user* you'll sign in as during the OAuth flow — both are needed.
+Sign up at https://developer.ebay.com (free). This is the *developer account* in the table above — you only use it to manage the app keyset and RuNames, never to sign listings.
 
 ### 2. Create an app keyset
 
@@ -66,12 +82,12 @@ Trading-API OAuth requires a RuName (redirect URL name) with OAuth enabled on it
 3. Make sure the OAuth-enabled column shows a green check for that RuName.
 4. Copy its full name (e.g. `MyAccount-MyApp-PRD-abc12345-ab1c2def`) into `EBAY_RU_NAME` in `.env.local`.
 
-### 4. Create a sandbox test user
+### 4. Get a seller user account
 
-The OAuth consent flow needs a *sandbox* eBay user — your developer-account credentials won't work.
+The OAuth consent flow needs a *seller user* — distinct from your developer-portal login (see "Two accounts, two roles" above).
 
-- Create one at https://developer.ebay.com/sandbox/register. Throwaway email/password; not email-verified.
-- Save the credentials — you'll use them every time you mint a fresh token.
+- **Sandbox** (`EBAY_ENV=sandbox`): create a sandbox test user at https://developer.ebay.com/sandbox/register. Throwaway email/password; not email-verified. Save them — you'll re-use them every time you mint a fresh token.
+- **Production** (`EBAY_ENV=production`): use your *real* eBay account (the one that owns the inventory).
 
 ### 5. Mint the OAuth tokens (one-time, via the helper script)
 
@@ -81,7 +97,9 @@ npm install
 # Step A — open the consent URL in your browser
 node scripts/ebay-oauth.mjs
 
-# Sign in as the sandbox test user (NOT your developer.ebay.com account).
+# Sign in as the seller user account that matches your EBAY_ENV setting:
+#   sandbox    -> a sandbox test user (NOT your developer.ebay.com account)
+#   production -> your real eBay seller account (NOT your developer.ebay.com account)
 # Click "Agree and Continue".
 # Copy the URL from the address bar of the resulting tab.
 
@@ -89,11 +107,12 @@ node scripts/ebay-oauth.mjs
 node scripts/ebay-oauth.mjs '<paste-the-url-here>'
 ```
 
-The script writes `EBAY_AUTH_TOKEN` (access, ~2h) and `EBAY_REFRESH_TOKEN` (~18mo) into `.env.local`.
+The script writes `EBAY_AUTH_TOKEN` (access, ~2h) and `EBAY_REFRESH_TOKEN` (~18mo) into `.env.local`. The script picks sandbox vs production endpoints based on `EBAY_ENV`, so **swap envs → re-mint tokens** (sandbox and production tokens are not interchangeable).
 
 You only need to re-run this when:
 - The refresh token expires (~18 months)
-- You want to switch to a different sandbox user
+- You change `EBAY_ENV` between sandbox and production
+- You want to switch to a different seller user
 - You change OAuth scopes
 
 ### 6. Run
@@ -146,7 +165,9 @@ The samples in `lib/samples.ts` are seed bodies you can edit per call. Add a new
 ## Known gotchas
 
 - **`GeteBayOfficialTime` is dead in the sandbox.** eBay's edge drops the connection when that specific call name is in the `X-EBAY-API-CALL-NAME` header. It was removed from `lib/samples.ts` — use `GetUser` as your smoke test instead.
-- **Sandbox sign-in ≠ developer.ebay.com sign-in.** Token minting (whether via the helper script or the developer portal UI) requires a **sandbox test user**. Your real eBay/developer account credentials will be rejected.
+- **Developer account ≠ seller user account.** The OAuth consent screen asks the *seller* (the user who owns the listings) to grant access to the *app* (owned by your developer account). See "Two accounts, two roles" in Setup. Signing in with your developer-portal credentials at the OAuth consent screen will be rejected.
+- **Sandbox tokens don't work in production (and vice versa).** OAuth tokens are scoped to one environment. After flipping `EBAY_ENV`, re-run `node scripts/ebay-oauth.mjs` to mint fresh tokens for the new environment.
+- **Production calls hit real listings.** The `/api/ebay` route blocks destructive calls (`AddItem`, `ReviseItem`, `EndItem`, etc. — see `DESTRUCTIVE_CALLS` in `lib/samples.ts`) on `EBAY_ENV=production` unless `allowProduction: true` is in the request body. The UI shows a confirmation dialog before sending the opt-in.
 - **OAuth tokens contain `#`.** See the env-var note above — quote them, or dotenv truncates.
 - **`AddItem` sample uses category 9355 (Cell Phones).** That category requires Brand / Model / Color / Storage Capacity item specifics; they're in the sample. If you change category, expect different item-specific requirements.
 - **`ListingDuration` must be `GTC`** for fixed-price listings now. eBay deprecated `Days_7` etc. for `FixedPriceItem`.

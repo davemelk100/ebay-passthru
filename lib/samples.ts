@@ -1,5 +1,23 @@
 // Sample inner-XML bodies for common Trading API calls.
 // Kept in its own module so client components can import it without pulling in server-only code.
+
+// Trading calls that mutate live data — blocked in production unless `allowProduction: true`
+// is passed in the request body. Mirror this set on the server and the client so the UI can
+// warn before sending.
+export const DESTRUCTIVE_CALLS = new Set<string>([
+  "AddItem",
+  "AddItems",
+  "AddFixedPriceItem",
+  "ReviseItem",
+  "ReviseItems",
+  "ReviseFixedPriceItem",
+  "RelistItem",
+  "RelistFixedPriceItem",
+  "EndItem",
+  "EndItems",
+  "EndFixedPriceItem",
+]);
+
 export const SAMPLE_BODIES: Record<string, string> = {
   GetUser: "",
   GetMyeBaySelling: `<ActiveList>
