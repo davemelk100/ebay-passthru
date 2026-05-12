@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRememberedItemId } from "./useRememberedItemId";
 
 interface ActiveListItem {
@@ -106,31 +106,44 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
     }
   }
 
-  async function pullAll() {
-    setPullLoading(true);
-    setPull(null);
-    setResult(null);
-    setClear(null);
-    try {
-      const res = await fetch("/api/inventory", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ entriesPerPage: 100, includeEnded }),
-      });
-      const data = (await res.json()) as InventoryResult;
-      setPull(data);
-    } catch (e) {
-      setPull({
-        ok: false,
-        fetched: 0,
-        pagesFetched: 0,
-        durationMs: 0,
-        error: (e as Error).message,
-      });
-    } finally {
-      setPullLoading(false);
-    }
-  }
+  const pullAll = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      setPullLoading(true);
+      if (!opts?.silent) {
+        setPull(null);
+        setResult(null);
+        setClear(null);
+      }
+      try {
+        const res = await fetch("/api/inventory", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ entriesPerPage: 100, includeEnded }),
+        });
+        const data = (await res.json()) as InventoryResult;
+        setPull(data);
+      } catch (e) {
+        setPull({
+          ok: false,
+          fetched: 0,
+          pagesFetched: 0,
+          durationMs: 0,
+          error: (e as Error).message,
+        });
+      } finally {
+        setPullLoading(false);
+      }
+    },
+    [includeEnded],
+  );
+
+  // Auto-refresh when the user toggles include-ended after the first pull.
+  // The leading `pull !== null` guard avoids firing on initial mount and on
+  // re-renders that aren't toggle changes.
+  useEffect(() => {
+    if (pull !== null) pullAll({ silent: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [includeEnded]);
 
   async function clearAll() {
     const isProd = env === "production";
@@ -167,15 +180,18 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
       <header className="mb-3 flex items-center justify-between">
         <h2 className="text-lg font-semibold">Feed (GetMyeBaySelling · ActiveList)</h2>
         <div className="flex items-center gap-2">
-          <label className="flex items-center gap-1 text-xs text-neutral-500">
+          <label className="inline-flex cursor-pointer items-center gap-2 select-none">
+            <span className="text-xs text-neutral-500">include ended/sold</span>
             <input
               type="checkbox"
               checked={includeEnded}
               onChange={(e) => setIncludeEnded(e.target.checked)}
               disabled={loading || pullLoading || clearLoading}
-              className="h-3 w-3"
+              className="peer sr-only"
             />
-            include ended/sold
+            <span
+              className="relative h-5 w-9 rounded-full bg-neutral-300 transition-colors after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:shadow after:transition-transform after:content-[''] peer-checked:bg-blue-600 peer-checked:after:translate-x-4 peer-disabled:opacity-50 dark:bg-neutral-700"
+            />
           </label>
           <button
             type="button"
@@ -187,7 +203,7 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
           </button>
           <button
             type="button"
-            onClick={pullAll}
+            onClick={() => pullAll()}
             disabled={loading || pullLoading || clearLoading}
             className="rounded-md bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-neutral-700 disabled:opacity-60 dark:bg-neutral-100 dark:text-neutral-900"
           >
