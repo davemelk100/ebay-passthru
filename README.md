@@ -148,26 +148,31 @@ Open http://localhost:3000 (or whatever port Next.js picks if 3000 is taken).
 | Method | Path | Body | Returns |
 | --- | --- | --- | --- |
 | `GET` | `/api/ebay` | — | `{ env, siteId, compatLevel, missing }` — quick config sanity check |
-| `POST` | `/api/ebay` | `{ callName, xml }` | `{ ok, status, ack, errors, rawXml, parsed, endpoint, durationMs }` |
-| `POST` | `/api/crud-check` | `{ allowProduction?: boolean }` | Per-step report of an `AddItem` → `GetItem` → `ReviseItem` → `EndItem` round-trip. Production is gated behind `allowProduction: true` since it publishes a real listing. |
+| `POST` | `/api/ebay` | `{ callName, xml, allowProduction?: boolean }` | `{ ok, status, ack, errors, rawXml, parsed, endpoint, durationMs }`. Destructive calls (`AddItem` / `ReviseItem` / `EndItem` and variants) on `EBAY_ENV=production` are 412'd unless `allowProduction: true` is present. |
+| `POST` | `/api/inventory` | `{ entriesPerPage?, daysAhead?, daysBack?, includeEnded?: boolean }` | Paginates `GetSellerList` over a forward `EndTime` window (default 119d forward). Returns a normalized item list — `{ itemId, title, sku, quantity, quantitySold, price, currency, listingType, listingStatus, viewItemUrl, startTime, endTime, primaryCategoryId, primaryCategoryName, pictureUrls }`. With `includeEnded: true`, the window splits backward (default 30d back / 89d ahead) and ended/sold items are included. |
+| `POST` | `/api/inventory/clear` | `{ allowProduction?: boolean }` | Enumerates every active listing via `GetMyeBaySelling` pagination, then calls `EndItem` on each. Returns `{ foundCount, endedCount, failedCount, results, durationMs }`. Production-gated. |
+| `POST` | `/api/crud-check` | `{ allowProduction?: boolean }` | Per-step report of an `AddItem` → `GetItem` → `ReviseItem` → `EndItem` round-trip. Production-gated. |
 
 The `xml` field is the **inner** body — the server wraps it in `<CallNameRequest>`. If you pass a full envelope (e.g., `<GetItemRequest>…</GetItemRequest>`), it's used as-is.
 
 ## UI
 
-`/` renders `CallPanel.tsx`, which:
-- Shows a pill button per call name from `lib/samples.ts`
-- Lets you edit the inner XML before sending
-- Displays HTTP status, duration, eBay `Ack`, raw XML, parsed JSON, and a structured error list
+The page (`app/page.tsx`) renders three panels:
 
-The samples in `lib/samples.ts` are seed bodies you can edit per call. Add a new sample by adding a new key — the UI picks it up automatically.
+- **Inventory (GetSellerList)** — `FeedView.tsx`. "Pull full inventory" hits `/api/inventory` and renders the normalized item table. Each row has a **Use** button that stamps the ItemID into shared state so the call panel picks it up. A pill **toggle** ("include ended/sold") flips the request; after the first pull, toggling auto-refreshes the table without a re-click. The red **Clear inventory** button enumerates and ends every active listing — requires a typed challenge string (`CLEAR` on sandbox, `CLEAR PRODUCTION` on prod) before submitting.
+- **Trading API passthrough** — `CallPanel.tsx`. One pill button per entry in `lib/samples.ts`. On `EBAY_ENV=production`, destructive pills (Add/Revise/End variants) render disabled with a styled hover tooltip explaining why. Sending in production also triggers a `window.confirm` opt-in. `REPLACE_WITH_ITEM_ID` in samples is auto-substituted with the shared "last selected" ItemID — populated either by a successful `AddItem` here or by clicking **Use** in the inventory table. State sync between the two panels goes through `useRememberedItemId` (localStorage + window CustomEvent).
+- **CRUD check** — `CrudCheck.tsx`. Runs the full `AddItem → GetItem → ReviseItem → EndItem` pipeline against the configured env, with the same production guardrail.
+
+The samples in `lib/samples.ts` are seed bodies you can edit per call. Add a new sample by adding a new key — the UI picks it up automatically. Add a call name to `DESTRUCTIVE_CALLS` in the same file to gate it the same way as Add/Revise/End.
 
 ## Known gotchas
 
 - **`GeteBayOfficialTime` is dead in the sandbox.** eBay's edge drops the connection when that specific call name is in the `X-EBAY-API-CALL-NAME` header. It was removed from `lib/samples.ts` — use `GetUser` as your smoke test instead.
 - **Developer account ≠ seller user account.** The OAuth consent screen asks the *seller* (the user who owns the listings) to grant access to the *app* (owned by your developer account). See "Two accounts, two roles" in Setup. Signing in with your developer-portal credentials at the OAuth consent screen will be rejected.
 - **Sandbox tokens don't work in production (and vice versa).** OAuth tokens are scoped to one environment. After flipping `EBAY_ENV`, re-run `node scripts/ebay-oauth.mjs` to mint fresh tokens for the new environment.
-- **Production calls hit real listings.** The `/api/ebay` route blocks destructive calls (`AddItem`, `ReviseItem`, `EndItem`, etc. — see `DESTRUCTIVE_CALLS` in `lib/samples.ts`) on `EBAY_ENV=production` unless `allowProduction: true` is in the request body. The UI shows a confirmation dialog before sending the opt-in.
+- **Production calls hit real listings.** The `/api/ebay`, `/api/inventory/clear`, and `/api/crud-check` routes all 412 destructive calls (`AddItem`, `ReviseItem`, `EndItem`, etc. — see `DESTRUCTIVE_CALLS` in `lib/samples.ts`) on `EBAY_ENV=production` unless `allowProduction: true` is in the request body. The UI disables those pills entirely on production and falls back to a `window.confirm` opt-in if a destructive call is reached.
+- **`GetMyeBaySelling.ActiveList` has search-index lag.** New listings can take minutes to surface there. `/api/inventory` uses `GetSellerList` instead, which queries the listing store directly and avoids the lag (it also populates `primaryCategoryName`, which `GetMyeBaySelling` leaves empty).
+- **`GetSellerList` date windows are capped at 120 days.** `/api/inventory` clamps `daysAhead + daysBack ≤ 119` so the active-only mode covers up to 119 days forward, and the include-ended mode defaults to 30d back / 89d ahead.
 - **OAuth tokens contain `#`.** See the env-var note above — quote them, or dotenv truncates.
 - **`AddItem` sample uses category 9355 (Cell Phones).** That category requires Brand / Model / Color / Storage Capacity item specifics; they're in the sample. If you change category, expect different item-specific requirements.
 - **`ListingDuration` must be `GTC`** for fixed-price listings now. eBay deprecated `Days_7` etc. for `FixedPriceItem`.
@@ -177,8 +182,13 @@ The samples in `lib/samples.ts` are seed bodies you can edit per call. Add a new
 | File | Purpose |
 | --- | --- |
 | `lib/ebay.ts` | Config loader, OAuth refresh, XML envelope builder, curl subprocess wrapper, response parser |
-| `lib/samples.ts` | Inner-XML seed bodies per call name |
-| `app/api/ebay/route.ts` | The passthrough endpoint |
+| `lib/samples.ts` | Inner-XML seed bodies per call name and the `DESTRUCTIVE_CALLS` set used by both server-side gating and UI disabling |
+| `app/api/ebay/route.ts` | Passthrough endpoint; enforces the production opt-in for destructive calls |
+| `app/api/inventory/route.ts` | Paginated `GetSellerList` reader with active-only / include-ended modes |
+| `app/api/inventory/clear/route.ts` | Bulk-end every active listing; production-gated |
 | `app/api/crud-check/route.ts` | 4-step CRUD verification pipeline |
-| `app/components/CallPanel.tsx` | Browser UI |
+| `app/components/FeedView.tsx` | Inventory table + Pull / Clear / include-ended toggle |
+| `app/components/CallPanel.tsx` | Single-call passthrough UI with destructive-pill disabling on prod |
+| `app/components/CrudCheck.tsx` | CRUD verification UI |
+| `app/components/useRememberedItemId.ts` | Shared hook (localStorage + window CustomEvent) that links FeedView's "Use" button to CallPanel's placeholder substitution |
 | `scripts/ebay-oauth.mjs` | One-time OAuth Authorization Code helper (writes tokens to `.env.local`) |
