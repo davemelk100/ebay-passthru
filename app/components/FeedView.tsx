@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRememberedItemId } from "./useRememberedItemId";
 
 interface ActiveListItem {
   ItemID?: string | number;
@@ -73,6 +74,7 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
   const [pull, setPull] = useState<InventoryResult | null>(null);
   const [clearLoading, setClearLoading] = useState(false);
   const [clear, setClear] = useState<ClearResult | null>(null);
+  const [rememberedItemId, setRememberedItemId] = useRememberedItemId();
 
   async function load() {
     setLoading(true);
@@ -288,6 +290,7 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
                   <table className="w-full text-left text-sm">
                     <thead className="text-xs uppercase text-neutral-500">
                       <tr>
+                        <th className="px-2 py-1"></th>
                         <th className="px-2 py-1">ItemID</th>
                         <th className="px-2 py-1">Title</th>
                         <th className="px-2 py-1">SKU</th>
@@ -299,35 +302,61 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
                       </tr>
                     </thead>
                     <tbody>
-                      {pull.items.map((it) => (
-                        <tr key={it.itemId} className="border-t border-neutral-100 dark:border-neutral-800">
-                          <td className="px-2 py-1 font-mono text-xs">
-                            {it.viewItemUrl ? (
-                              <a
-                                href={it.viewItemUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="text-blue-600 hover:underline"
+                      {pull.items.map((it) => {
+                        const isSelected = rememberedItemId === it.itemId;
+                        return (
+                          <tr
+                            key={it.itemId}
+                            className={`border-t border-neutral-100 dark:border-neutral-800 ${
+                              isSelected ? "bg-blue-50 dark:bg-blue-950/30" : ""
+                            }`}
+                          >
+                            <td className="px-2 py-1">
+                              <button
+                                type="button"
+                                onClick={() => setRememberedItemId(isSelected ? null : it.itemId)}
+                                title={
+                                  isSelected
+                                    ? "Currently selected — click to unset"
+                                    : "Use this ItemID in GetItem / ReviseItem / EndItem"
+                                }
+                                className={`rounded px-2 py-0.5 text-[11px] font-medium ${
+                                  isSelected
+                                    ? "bg-blue-600 text-white"
+                                    : "border border-neutral-300 text-neutral-700 hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
+                                }`}
                               >
-                                {it.itemId}
-                              </a>
-                            ) : (
-                              it.itemId
-                            )}
-                          </td>
-                          <td className="px-2 py-1">{it.title}</td>
-                          <td className="px-2 py-1 font-mono text-xs">{it.sku}</td>
-                          <td className="px-2 py-1">{it.quantity}</td>
-                          <td className="px-2 py-1">{it.quantitySold}</td>
-                          <td className="px-2 py-1">
-                            {it.price} {it.currency}
-                          </td>
-                          <td className="px-2 py-1 text-xs text-neutral-500">
-                            {it.primaryCategoryName || it.primaryCategoryId}
-                          </td>
-                          <td className="px-2 py-1">{it.listingType}</td>
-                        </tr>
-                      ))}
+                                {isSelected ? "Selected" : "Use"}
+                              </button>
+                            </td>
+                            <td className="px-2 py-1 font-mono text-xs">
+                              {it.viewItemUrl ? (
+                                <a
+                                  href={it.viewItemUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-blue-600 hover:underline"
+                                >
+                                  {it.itemId}
+                                </a>
+                              ) : (
+                                it.itemId
+                              )}
+                            </td>
+                            <td className="px-2 py-1">{it.title}</td>
+                            <td className="px-2 py-1 font-mono text-xs">{it.sku}</td>
+                            <td className="px-2 py-1">{it.quantity}</td>
+                            <td className="px-2 py-1">{it.quantitySold}</td>
+                            <td className="px-2 py-1">
+                              {it.price} {it.currency}
+                            </td>
+                            <td className="px-2 py-1 text-xs text-neutral-500">
+                              {it.primaryCategoryName || it.primaryCategoryId}
+                            </td>
+                            <td className="px-2 py-1">{it.listingType}</td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { DESTRUCTIVE_CALLS, SAMPLE_BODIES } from "@/lib/samples";
+import { useRememberedItemId } from "./useRememberedItemId";
 
 const CALLS = Object.keys(SAMPLE_BODIES);
 const PLACEHOLDER = "REPLACE_WITH_ITEM_ID";
-const STORAGE_KEY = "ebay-passthru:lastItemId";
 
 function substituteItemId(xml: string, itemId: string | null): string {
   if (!itemId) return xml;
@@ -43,12 +43,7 @@ export default function CallPanel({ env }: { env: "sandbox" | "production" }) {
   const [xml, setXml] = useState<string>(SAMPLE_BODIES.GetUser ?? "");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ApiResult | null>(null);
-  const [rememberedItemId, setRememberedItemId] = useState<string | null>(null);
-
-  useEffect(() => {
-    const saved = typeof window !== "undefined" ? window.localStorage.getItem(STORAGE_KEY) : null;
-    if (saved) setRememberedItemId(saved);
-  }, []);
+  const [rememberedItemId, setRememberedItemId] = useRememberedItemId();
 
   function pickCall(name: string) {
     setCallName(name);
@@ -91,13 +86,9 @@ export default function CallPanel({ env }: { env: "sandbox" | "production" }) {
 
       if (data.ok && callName === "AddItem") {
         const newId = extractItemIdFromResponse(data.parsed);
-        if (newId) {
-          setRememberedItemId(newId);
-          window.localStorage.setItem(STORAGE_KEY, newId);
-        }
+        if (newId) setRememberedItemId(newId);
       } else if (data.ok && callName === "EndItem" && rememberedItemId) {
         setRememberedItemId(null);
-        window.localStorage.removeItem(STORAGE_KEY);
       }
     } catch (e) {
       setResult({
@@ -151,10 +142,7 @@ export default function CallPanel({ env }: { env: "sandbox" | "production" }) {
             </code>{" "}
             <button
               type="button"
-              onClick={() => {
-                setRememberedItemId(null);
-                window.localStorage.removeItem(STORAGE_KEY);
-              }}
+              onClick={() => setRememberedItemId(null)}
               className="ml-1 text-blue-600 hover:underline"
             >
               clear
