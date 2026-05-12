@@ -30,6 +30,7 @@ interface NormalizedItem {
   price: string;
   currency: string;
   listingType: string;
+  listingStatus: string;
   timeLeft: string;
   viewItemUrl: string;
   startTime: string;
@@ -48,10 +49,19 @@ export async function POST(req: Request) {
     entriesPerPage?: number;
     maxPages?: number;
     daysAhead?: number;
+    daysBack?: number;
+    includeEnded?: boolean;
   };
   const entriesPerPage = Math.min(200, Math.max(1, body.entriesPerPage ?? 100));
   const maxPages = Math.min(500, Math.max(1, body.maxPages ?? 50));
-  const daysAhead = Math.min(119, Math.max(1, body.daysAhead ?? 119));
+  const includeEnded = body.includeEnded === true;
+  // eBay caps EndTimeFrom..EndTimeTo at ~120 days. Split when including ended.
+  let daysAhead = Math.min(119, Math.max(1, body.daysAhead ?? (includeEnded ? 89 : 119)));
+  let daysBack = Math.min(119, Math.max(0, body.daysBack ?? (includeEnded ? 30 : 0)));
+  if (daysAhead + daysBack > 119) {
+    // Trim daysBack first so we keep forward coverage of active listings intact.
+    daysBack = Math.max(0, 119 - daysAhead);
+  }
 
   const cfg = readConfig();
   const missing = configIssues(cfg);
@@ -63,7 +73,7 @@ export async function POST(req: Request) {
   }
 
   const now = new Date();
-  const endFrom = now.toISOString();
+  const endFrom = new Date(now.getTime() - daysBack * 24 * 60 * 60 * 1000).toISOString();
   const endTo = new Date(now.getTime() + daysAhead * 24 * 60 * 60 * 1000).toISOString();
 
   const started = Date.now();
@@ -103,10 +113,10 @@ export async function POST(req: Request) {
       ? ((Array.isArray(itemArray) ? itemArray : [itemArray]) as RawItem[])
       : [];
 
-    // GetSellerList returns ended/sold items too — keep only Active.
+    // GetSellerList returns ended/sold items too — filter unless caller asked otherwise.
     for (const raw of rawItems) {
       const status = raw.SellingStatus?.ListingStatus;
-      if (status && status !== "Active") continue;
+      if (!includeEnded && status && status !== "Active") continue;
       items.push(normalizeItem(raw));
     }
 
@@ -125,7 +135,8 @@ export async function POST(req: Request) {
     truncated: lastPageFetched < totalPages,
     durationMs: Date.now() - started,
     items,
-    window: { endTimeFrom: endFrom, endTimeTo: endTo, daysAhead },
+    includeEnded,
+    window: { endTimeFrom: endFrom, endTimeTo: endTo, daysAhead, daysBack },
   });
 }
 
@@ -152,6 +163,7 @@ function normalizeItem(raw: RawItem): NormalizedItem {
     price,
     currency,
     listingType: String(raw.ListingType ?? ""),
+    listingStatus: String(raw.SellingStatus?.ListingStatus ?? ""),
     timeLeft: String(raw.TimeLeft ?? ""),
     viewItemUrl: String(raw.ListingDetails?.ViewItemURL ?? ""),
     startTime: String(raw.ListingDetails?.StartTime ?? ""),

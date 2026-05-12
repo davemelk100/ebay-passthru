@@ -31,6 +31,7 @@ interface InventoryItem {
   price: string;
   currency: string;
   listingType: string;
+  listingStatus: string;
   timeLeft: string;
   viewItemUrl: string;
   startTime: string;
@@ -75,6 +76,7 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
   const [clearLoading, setClearLoading] = useState(false);
   const [clear, setClear] = useState<ClearResult | null>(null);
   const [rememberedItemId, setRememberedItemId] = useRememberedItemId();
+  const [includeEnded, setIncludeEnded] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -113,7 +115,7 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
       const res = await fetch("/api/inventory", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ entriesPerPage: 100 }),
+        body: JSON.stringify({ entriesPerPage: 100, includeEnded }),
       });
       const data = (await res.json()) as InventoryResult;
       setPull(data);
@@ -164,7 +166,17 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
     <section className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900">
       <header className="mb-3 flex items-center justify-between">
         <h2 className="text-lg font-semibold">Feed (GetMyeBaySelling · ActiveList)</h2>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
+          <label className="flex items-center gap-1 text-xs text-neutral-500">
+            <input
+              type="checkbox"
+              checked={includeEnded}
+              onChange={(e) => setIncludeEnded(e.target.checked)}
+              disabled={loading || pullLoading || clearLoading}
+              className="h-3 w-3"
+            />
+            include ended/sold
+          </label>
           <button
             type="button"
             onClick={load}
@@ -297,6 +309,7 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
                         <th className="px-2 py-1">Qty</th>
                         <th className="px-2 py-1">Sold</th>
                         <th className="px-2 py-1">Price</th>
+                        <th className="px-2 py-1">Status</th>
                         <th className="px-2 py-1">Category</th>
                         <th className="px-2 py-1">Type</th>
                       </tr>
@@ -349,6 +362,17 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
                             <td className="px-2 py-1">{it.quantitySold}</td>
                             <td className="px-2 py-1">
                               {it.price} {it.currency}
+                            </td>
+                            <td className="px-2 py-1 text-xs">
+                              <span
+                                className={
+                                  it.listingStatus === "Active"
+                                    ? "text-green-700 dark:text-green-400"
+                                    : "text-neutral-500"
+                                }
+                              >
+                                {it.listingStatus || "—"}
+                              </span>
                             </td>
                             <td className="px-2 py-1 text-xs text-neutral-500">
                               {it.primaryCategoryName || it.primaryCategoryId}
