@@ -1,9 +1,28 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { SAMPLE_BODIES } from "@/lib/samples";
 
 const CALLS = Object.keys(SAMPLE_BODIES);
+const PLACEHOLDER = "REPLACE_WITH_ITEM_ID";
+const STORAGE_KEY = "ebay-passthru:lastItemId";
+
+function substituteItemId(xml: string, itemId: string | null): string {
+  if (!itemId) return xml;
+  return xml.split(PLACEHOLDER).join(itemId);
+}
+
+function extractItemIdFromResponse(parsed: unknown): string | null {
+  const root = parsed as Record<string, unknown> | null;
+  if (!root) return null;
+  for (const key of Object.keys(root)) {
+    if (!key.endsWith("Response")) continue;
+    const resp = root[key] as Record<string, unknown> | undefined;
+    const id = resp?.ItemID;
+    if (id !== undefined && id !== null && String(id).length > 0) return String(id);
+  }
+  return null;
+}
 
 interface ApiResult {
   ok: boolean;
@@ -20,14 +39,27 @@ interface ApiResult {
 }
 
 export default function CallPanel() {
-  const [callName, setCallName] = useState<string>("GeteBayOfficialTime");
-  const [xml, setXml] = useState<string>(SAMPLE_BODIES.GeteBayOfficialTime ?? "");
+  const [callName, setCallName] = useState<string>("GetUser");
+  const [xml, setXml] = useState<string>(SAMPLE_BODIES.GetUser ?? "");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ApiResult | null>(null);
+  const [rememberedItemId, setRememberedItemId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const saved = typeof window !== "undefined" ? window.localStorage.getItem(STORAGE_KEY) : null;
+    if (saved) setRememberedItemId(saved);
+  }, []);
 
   function pickCall(name: string) {
     setCallName(name);
-    setXml(SAMPLE_BODIES[name] ?? "");
+    let body = substituteItemId(SAMPLE_BODIES[name] ?? "", rememberedItemId);
+    if (name === "AddItem") {
+      // Inject a unique stamp so each click produces a different title and
+      // avoids eBay's "Duplicate Listing" policy (error 21919067).
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+      body = body.replace("[SANDBOX]", `[SANDBOX ${stamp}]`);
+    }
+    setXml(body);
     setResult(null);
   }
 
@@ -42,6 +74,17 @@ export default function CallPanel() {
       });
       const data = (await res.json()) as ApiResult;
       setResult(data);
+
+      if (data.ok && callName === "AddItem") {
+        const newId = extractItemIdFromResponse(data.parsed);
+        if (newId) {
+          setRememberedItemId(newId);
+          window.localStorage.setItem(STORAGE_KEY, newId);
+        }
+      } else if (data.ok && callName === "EndItem" && rememberedItemId) {
+        setRememberedItemId(null);
+        window.localStorage.removeItem(STORAGE_KEY);
+      }
     } catch (e) {
       setResult({
         ok: false,
@@ -82,9 +125,29 @@ export default function CallPanel() {
         ))}
       </div>
 
-      <label className="mb-1 block text-xs font-medium text-neutral-500">
-        Inner XML (request body — credentials auto-injected)
-      </label>
+      <div className="mb-1 flex items-center justify-between">
+        <label className="block text-xs font-medium text-neutral-500">
+          Inner XML (request body — credentials auto-injected)
+        </label>
+        {rememberedItemId && (
+          <span className="text-xs text-neutral-500">
+            Saved ItemID:{" "}
+            <code className="font-mono text-neutral-700 dark:text-neutral-300">
+              {rememberedItemId}
+            </code>{" "}
+            <button
+              type="button"
+              onClick={() => {
+                setRememberedItemId(null);
+                window.localStorage.removeItem(STORAGE_KEY);
+              }}
+              className="ml-1 text-blue-600 hover:underline"
+            >
+              clear
+            </button>
+          </span>
+        )}
+      </div>
       <textarea
         value={xml}
         onChange={(e) => setXml(e.target.value)}

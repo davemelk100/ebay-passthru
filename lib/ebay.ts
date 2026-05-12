@@ -1,4 +1,5 @@
 import "server-only";
+import { execFile } from "node:child_process";
 import { XMLParser } from "fast-xml-parser";
 
 export type EbayEnv = "sandbox" | "production";
@@ -9,6 +10,7 @@ export interface EbayConfig {
   devId: string;
   certId: string;
   authToken: string;
+  refreshToken: string;
   siteId: string;
   compatLevel: string;
 }
@@ -39,6 +41,7 @@ export function readConfig(): EbayConfig {
     devId: process.env.EBAY_DEV_ID ?? "",
     certId: process.env.EBAY_CERT_ID ?? "",
     authToken: process.env.EBAY_AUTH_TOKEN ?? "",
+    refreshToken: process.env.EBAY_REFRESH_TOKEN ?? "",
     siteId: process.env.EBAY_SITE_ID ?? "0",
     compatLevel: process.env.EBAY_COMPAT_LEVEL ?? "1193",
   };
@@ -49,7 +52,7 @@ export function configIssues(cfg: EbayConfig): string[] {
   if (!cfg.appId) missing.push("EBAY_APP_ID");
   if (!cfg.devId) missing.push("EBAY_DEV_ID");
   if (!cfg.certId) missing.push("EBAY_CERT_ID");
-  if (!cfg.authToken) missing.push("EBAY_AUTH_TOKEN");
+  if (!cfg.authToken && !cfg.refreshToken) missing.push("EBAY_AUTH_TOKEN or EBAY_REFRESH_TOKEN");
   return missing;
 }
 
@@ -66,30 +69,114 @@ const parser = new XMLParser({
   trimValues: true,
 });
 
-// Wraps a Trading API call body in the standard envelope, injecting the user auth token.
-export function buildRequestBody(callName: string, innerXml: string, cfg: EbayConfig): string {
+// Wraps a Trading API call body in the standard envelope.
+// OAuth: token is sent via X-EBAY-API-IAF-TOKEN header, not inside the body.
+export function buildRequestBody(callName: string, innerXml: string, _cfg: EbayConfig): string {
   const trimmed = innerXml.trim();
-  // If caller already supplied a full <CallNameRequest>...</CallNameRequest>, just inject the token.
   const hasEnvelope = trimmed.includes(`<${callName}Request`);
-  const credentialBlock = `<RequesterCredentials><eBayAuthToken>${cfg.authToken}</eBayAuthToken></RequesterCredentials>`;
 
   if (hasEnvelope) {
-    if (trimmed.includes("<RequesterCredentials>")) {
-      return `<?xml version="1.0" encoding="utf-8"?>\n${trimmed}`;
-    }
-    // inject credentials right after the opening request tag
-    const injected = trimmed.replace(
-      new RegExp(`(<${callName}Request[^>]*>)`),
-      `$1\n  ${credentialBlock}`,
-    );
-    return `<?xml version="1.0" encoding="utf-8"?>\n${injected}`;
+    return `<?xml version="1.0" encoding="utf-8"?>\n${trimmed}`;
   }
 
   return `<?xml version="1.0" encoding="utf-8"?>
 <${callName}Request xmlns="urn:ebay:apis:eBLBaseComponents">
-  ${credentialBlock}
   ${trimmed}
 </${callName}Request>`;
+}
+
+// eBay's edge rejects Node's TLS fingerprint when Trading API headers are present,
+// so we POST via the system `curl` binary instead of fetch.
+function curlPost(
+  url: string,
+  headers: Record<string, string>,
+  body: string,
+): Promise<{ status: number; text: string }> {
+  return new Promise((resolve, reject) => {
+    const STATUS_MARKER = "\n__EBAY_HTTP_STATUS__:";
+    const args = [
+      "-sS",
+      "-X",
+      "POST",
+      "--data-binary",
+      "@-",
+      "-w",
+      `${STATUS_MARKER}%{http_code}`,
+    ];
+    for (const [k, v] of Object.entries(headers)) {
+      args.push("-H", `${k}: ${v}`);
+    }
+    args.push(url);
+
+    const child = execFile(
+      "curl",
+      args,
+      { maxBuffer: 50 * 1024 * 1024, timeout: 60_000 },
+      (err, stdout) => {
+        if (err) return reject(err);
+        const idx = stdout.lastIndexOf(STATUS_MARKER);
+        if (idx < 0) {
+          return resolve({ status: 0, text: stdout });
+        }
+        const status = Number.parseInt(stdout.slice(idx + STATUS_MARKER.length).trim(), 10);
+        resolve({ status: Number.isFinite(status) ? status : 0, text: stdout.slice(0, idx) });
+      },
+    );
+    child.stdin?.end(body);
+  });
+}
+
+// Cached access token; refreshed automatically when expired/expiring.
+let cachedAccessToken: { token: string; expiresAt: number } | null = null;
+let inflightRefresh: Promise<string> | null = null;
+
+function identityEndpoint(env: EbayEnv): string {
+  return env === "production"
+    ? "https://api.ebay.com/identity/v1/oauth2/token"
+    : "https://api.sandbox.ebay.com/identity/v1/oauth2/token";
+}
+
+async function refreshAccessToken(cfg: EbayConfig): Promise<string> {
+  const basic = Buffer.from(`${cfg.appId}:${cfg.certId}`).toString("base64");
+  const form = new URLSearchParams({
+    grant_type: "refresh_token",
+    refresh_token: cfg.refreshToken,
+  }).toString();
+
+  const { status, text } = await curlPost(
+    identityEndpoint(cfg.env),
+    {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Authorization: `Basic ${basic}`,
+    },
+    form,
+  );
+
+  if (status !== 200) {
+    throw new Error(`Refresh token exchange failed: HTTP ${status} ${text}`);
+  }
+  const json = JSON.parse(text) as { access_token: string; expires_in: number };
+  cachedAccessToken = {
+    token: json.access_token,
+    expiresAt: Date.now() + (json.expires_in - 60) * 1000,
+  };
+  return json.access_token;
+}
+
+async function getAccessToken(cfg: EbayConfig): Promise<string> {
+  if (cachedAccessToken && cachedAccessToken.expiresAt > Date.now()) {
+    return cachedAccessToken.token;
+  }
+  if (!cfg.refreshToken) {
+    // No refresh token configured — fall back to the static EBAY_AUTH_TOKEN.
+    if (!cfg.authToken) throw new Error("No EBAY_AUTH_TOKEN or EBAY_REFRESH_TOKEN configured.");
+    return cfg.authToken;
+  }
+  if (inflightRefresh) return inflightRefresh;
+  inflightRefresh = refreshAccessToken(cfg).finally(() => {
+    inflightRefresh = null;
+  });
+  return inflightRefresh;
 }
 
 export async function callTradingApi(
@@ -101,9 +188,11 @@ export async function callTradingApi(
   const body = buildRequestBody(callName, innerXml, cfg);
   const started = Date.now();
 
-  const res = await fetch(endpoint, {
-    method: "POST",
-    headers: {
+  const accessToken = await getAccessToken(cfg);
+
+  const { status, text: rawXml } = await curlPost(
+    endpoint,
+    {
       "Content-Type": "text/xml",
       "X-EBAY-API-COMPATIBILITY-LEVEL": cfg.compatLevel,
       "X-EBAY-API-DEV-NAME": cfg.devId,
@@ -111,12 +200,11 @@ export async function callTradingApi(
       "X-EBAY-API-CERT-NAME": cfg.certId,
       "X-EBAY-API-CALL-NAME": callName,
       "X-EBAY-API-SITEID": cfg.siteId,
+      "X-EBAY-API-IAF-TOKEN": accessToken,
     },
     body,
-    cache: "no-store",
-  });
+  );
 
-  const rawXml = await res.text();
   const durationMs = Date.now() - started;
   let parsed: unknown = null;
   try {
@@ -133,8 +221,8 @@ export async function callTradingApi(
   const errors = extractErrors(resp);
 
   return {
-    ok: res.ok && (ack === "Success" || ack === "Warning"),
-    status: res.status,
+    ok: status >= 200 && status < 300 && (ack === "Success" || ack === "Warning"),
+    status,
     ack,
     errors,
     rawXml,
