@@ -3,25 +3,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRememberedItemId } from "./useRememberedItemId";
 
-interface ActiveListItem {
-  ItemID?: string | number;
-  Title?: string;
-  Quantity?: string | number;
-  SellingStatus?: { CurrentPrice?: { "#text"?: string | number } | string | number };
-  TimeLeft?: string;
-  ListingType?: string;
-}
-
-interface FeedResult {
-  ok: boolean;
-  ack?: string;
-  rawXml: string;
-  parsed: unknown;
-  errors: { code?: string; shortMessage?: string; longMessage?: string }[];
-  error?: string;
-  missing?: string[];
-}
-
 interface InventoryItem {
   itemId: string;
   title: string;
@@ -69,8 +50,6 @@ interface ClearResult {
 }
 
 export default function FeedView({ env }: { env: "sandbox" | "production" }) {
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<FeedResult | null>(null);
   const [pullLoading, setPullLoading] = useState(false);
   const [pull, setPull] = useState<InventoryResult | null>(null);
   const [clearLoading, setClearLoading] = useState(false);
@@ -78,40 +57,11 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
   const [rememberedItemId, setRememberedItemId] = useRememberedItemId();
   const [includeEnded, setIncludeEnded] = useState(false);
 
-  async function load() {
-    setLoading(true);
-    setResult(null);
-    setPull(null);
-    try {
-      const res = await fetch("/api/ebay", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          callName: "GetMyeBaySelling",
-          xml: `<ActiveList><Include>true</Include><Pagination><EntriesPerPage>25</EntriesPerPage><PageNumber>1</PageNumber></Pagination></ActiveList>`,
-        }),
-      });
-      const data = (await res.json()) as FeedResult;
-      setResult(data);
-    } catch (e) {
-      setResult({
-        ok: false,
-        rawXml: "",
-        parsed: null,
-        errors: [],
-        error: (e as Error).message,
-      });
-    } finally {
-      setLoading(false);
-    }
-  }
-
   const pullAll = useCallback(
     async (opts?: { silent?: boolean }) => {
       setPullLoading(true);
       if (!opts?.silent) {
         setPull(null);
-        setResult(null);
         setClear(null);
       }
       try {
@@ -138,8 +88,7 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
   );
 
   // Auto-refresh when the user toggles include-ended after the first pull.
-  // The leading `pull !== null` guard avoids firing on initial mount and on
-  // re-renders that aren't toggle changes.
+  // The leading `pull !== null` guard avoids firing on initial mount.
   useEffect(() => {
     if (pull !== null) pullAll({ silent: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -157,7 +106,6 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
     setClearLoading(true);
     setClear(null);
     setPull(null);
-    setResult(null);
     try {
       const res = await fetch("/api/inventory/clear", {
         method: "POST",
@@ -173,38 +121,26 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
     }
   }
 
-  const items = extractActiveItems(result?.parsed);
-
   return (
     <section className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900">
       <header className="mb-3 flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Feed (GetMyeBaySelling · ActiveList)</h2>
+        <h2 className="text-lg font-semibold">Inventory (GetSellerList)</h2>
         <div className="flex items-center gap-2">
-          <label className="inline-flex cursor-pointer items-center gap-2 select-none">
+          <label className="inline-flex cursor-pointer select-none items-center gap-2">
             <span className="text-xs text-neutral-500">include ended/sold</span>
             <input
               type="checkbox"
               checked={includeEnded}
               onChange={(e) => setIncludeEnded(e.target.checked)}
-              disabled={loading || pullLoading || clearLoading}
+              disabled={pullLoading || clearLoading}
               className="peer sr-only"
             />
-            <span
-              className="relative h-5 w-9 rounded-full bg-neutral-300 transition-colors after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:shadow after:transition-transform after:content-[''] peer-checked:bg-blue-600 peer-checked:after:translate-x-4 peer-disabled:opacity-50 dark:bg-neutral-700"
-            />
+            <span className="relative h-5 w-9 rounded-full bg-neutral-300 transition-colors after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:shadow after:transition-transform after:content-[''] peer-checked:bg-blue-600 peer-checked:after:translate-x-4 peer-disabled:opacity-50 dark:bg-neutral-700" />
           </label>
           <button
             type="button"
-            onClick={load}
-            disabled={loading || pullLoading}
-            className="rounded-md border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-100 disabled:opacity-60 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
-          >
-            {loading ? "Loading…" : "Load page 1"}
-          </button>
-          <button
-            type="button"
             onClick={() => pullAll()}
-            disabled={loading || pullLoading || clearLoading}
+            disabled={pullLoading || clearLoading}
             className="rounded-md bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-neutral-700 disabled:opacity-60 dark:bg-neutral-100 dark:text-neutral-900"
           >
             {pullLoading ? "Pulling…" : "Pull full inventory"}
@@ -212,7 +148,7 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
           <button
             type="button"
             onClick={clearAll}
-            disabled={loading || pullLoading || clearLoading}
+            disabled={pullLoading || clearLoading}
             className="rounded-md border border-red-300 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100 disabled:opacity-60 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-300"
           >
             {clearLoading ? "Clearing…" : env === "production" ? "Clear inventory (PROD)" : "Clear inventory"}
@@ -220,24 +156,13 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
         </div>
       </header>
 
-      {result?.error && (
-        <p className="text-xs text-red-600">Error: {result.error}</p>
-      )}
-      {result?.missing && result.missing.length > 0 && (
-        <p className="text-xs text-amber-600">
-          Missing env vars: {result.missing.join(", ")}
-        </p>
-      )}
-
       {clear && (
         <div className="mb-3 rounded-md border border-neutral-200 bg-neutral-50 p-3 dark:border-neutral-800 dark:bg-neutral-950">
           {clear.error ? (
             <p className="text-xs text-red-600">
               {clear.error}
               {clear.hint && <span className="block text-neutral-500">{clear.hint}</span>}
-              {clear.missing && (
-                <span className="block">Missing: {clear.missing.join(", ")}</span>
-              )}
+              {clear.missing && <span className="block">Missing: {clear.missing.join(", ")}</span>}
             </p>
           ) : (
             <div className="text-xs">
@@ -247,15 +172,13 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
                 </span>
                 <span>·</span>
                 <span>
-                  Ended:{" "}
-                  <strong className="text-green-700 dark:text-green-400">{clear.endedCount}</strong>
+                  Ended: <strong className="text-green-700 dark:text-green-400">{clear.endedCount}</strong>
                 </span>
                 {clear.failedCount ? (
                   <>
                     <span>·</span>
                     <span>
-                      Failed:{" "}
-                      <strong className="text-red-700 dark:text-red-400">{clear.failedCount}</strong>
+                      Failed: <strong className="text-red-700 dark:text-red-400">{clear.failedCount}</strong>
                     </span>
                   </>
                 ) : null}
@@ -282,7 +205,7 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
         </div>
       )}
 
-      {pull && (
+      {pull ? (
         <div className="mb-3">
           {pull.error || pull.missing ? (
             <p className="text-xs text-red-600">
@@ -300,9 +223,7 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
                 <span>·</span>
                 <span>
                   Pages: {pull.pagesFetched}
-                  {pull.totalPages && pull.totalPages !== pull.pagesFetched
-                    ? ` of ${pull.totalPages}`
-                    : ""}
+                  {pull.totalPages && pull.totalPages !== pull.pagesFetched ? ` of ${pull.totalPages}` : ""}
                 </span>
                 <span>·</span>
                 <span>{pull.durationMs}ms</span>
@@ -406,61 +327,11 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
             </>
           )}
         </div>
+      ) : (
+        <p className="text-xs text-neutral-500">
+          Click &ldquo;Pull full inventory&rdquo; to fetch every active listing. Toggle &ldquo;include ended/sold&rdquo; to also surface recently-ended items.
+        </p>
       )}
-
-      {!pull && items.length > 0 ? (
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="text-xs uppercase text-neutral-500">
-              <tr>
-                <th className="px-2 py-1">ItemID</th>
-                <th className="px-2 py-1">Title</th>
-                <th className="px-2 py-1">Qty</th>
-                <th className="px-2 py-1">Price</th>
-                <th className="px-2 py-1">Time left</th>
-                <th className="px-2 py-1">Type</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((it, i) => (
-                <tr key={i} className="border-t border-neutral-100 dark:border-neutral-800">
-                  <td className="px-2 py-1 font-mono text-xs">{String(it.ItemID ?? "")}</td>
-                  <td className="px-2 py-1">{it.Title}</td>
-                  <td className="px-2 py-1">{String(it.Quantity ?? "")}</td>
-                  <td className="px-2 py-1">{formatPrice(it.SellingStatus)}</td>
-                  <td className="px-2 py-1">{it.TimeLeft}</td>
-                  <td className="px-2 py-1">{it.ListingType}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : !pull && result ? (
-        <p className="text-xs text-neutral-500">
-          No active items to show. (Ack: {result.ack ?? "—"})
-        </p>
-      ) : !pull && !result ? (
-        <p className="text-xs text-neutral-500">
-          Click “Load page 1” for a quick sample or “Pull full inventory” to fetch every active listing.
-        </p>
-      ) : null}
     </section>
   );
-}
-
-function extractActiveItems(parsed: unknown): ActiveListItem[] {
-  const root = parsed as Record<string, unknown> | null;
-  const resp = root?.GetMyeBaySellingResponse as Record<string, unknown> | undefined;
-  const active = resp?.ActiveList as Record<string, unknown> | undefined;
-  const itemArray = active?.ItemArray as Record<string, unknown> | undefined;
-  const items = itemArray?.Item;
-  if (!items) return [];
-  return (Array.isArray(items) ? items : [items]) as ActiveListItem[];
-}
-
-function formatPrice(status: ActiveListItem["SellingStatus"]): string {
-  if (!status) return "";
-  const cp = status.CurrentPrice;
-  if (typeof cp === "object" && cp && "#text" in cp) return String((cp as { "#text": unknown })["#text"] ?? "");
-  return String(cp ?? "");
 }

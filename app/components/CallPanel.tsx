@@ -114,20 +114,39 @@ export default function CallPanel({ env }: { env: "sandbox" | "production" }) {
       </header>
 
       <div className="mb-3 flex flex-wrap gap-2">
-        {CALLS.map((c) => (
-          <button
-            key={c}
-            type="button"
-            onClick={() => pickCall(c)}
-            className={`rounded-full border px-3 py-1 text-xs ${
-              callName === c
-                ? "border-blue-600 bg-blue-600 text-white"
-                : "border-neutral-300 bg-neutral-50 text-neutral-700 hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"
-            }`}
-          >
-            {c}
-          </button>
-        ))}
+        {CALLS.map((c) => {
+          const blocked = env === "production" && DESTRUCTIVE_CALLS.has(c);
+          const isSelected = callName === c;
+          const button = (
+            <button
+              type="button"
+              onClick={() => pickCall(c)}
+              disabled={blocked}
+              className={`rounded-full border px-3 py-1 text-xs ${
+                blocked
+                  ? "cursor-not-allowed border-neutral-200 bg-neutral-50 text-neutral-400 line-through dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-600"
+                  : isSelected
+                    ? "border-blue-600 bg-blue-600 text-white"
+                    : "border-neutral-300 bg-neutral-50 text-neutral-700 hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"
+              }`}
+            >
+              {c}
+            </button>
+          );
+          if (!blocked) return <span key={c}>{button}</span>;
+          return (
+            <span key={c} className="group relative inline-block">
+              {button}
+              <span
+                role="tooltip"
+                className="pointer-events-none invisible absolute bottom-full left-1/2 z-10 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded-md bg-neutral-900 px-2 py-1 text-[11px] font-medium text-white opacity-0 shadow-lg transition-opacity duration-150 group-hover:visible group-hover:opacity-100 dark:bg-neutral-100 dark:text-neutral-900"
+              >
+                ⚠ {c} mutates real seller data — disabled in production
+                <span className="absolute left-1/2 top-full -mt-px h-0 w-0 -translate-x-1/2 border-x-4 border-t-4 border-x-transparent border-t-neutral-900 dark:border-t-neutral-100" />
+              </span>
+            </span>
+          );
+        })}
       </div>
 
       <div className="mb-1 flex items-center justify-between">
