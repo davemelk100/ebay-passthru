@@ -2,6 +2,41 @@
   "_doc": "Counter-bid rules. Evaluated top to bottom; first match wins. See lib/counter-bid.ts for the type contract.",
   "rules": [
     {
+      "name": "graded-psa10-hold-firm",
+      "when": { "grader_in": ["PSA"], "grade_gte": 10, "ratio_lt": 0.95 },
+      "action": {
+        "type": "counter",
+        "price": { "stat": "p90", "from": "comps", "fallback": 0 },
+        "message": "This is a PSA 10 — sticking close to asking."
+      }
+    },
+    {
+      "name": "graded-95plus-counter-p75",
+      "when": { "is_graded": true, "grade_gte": 9.5, "ratio_lt": 0.9 },
+      "action": {
+        "type": "counter",
+        "price": { "stat": "p75", "from": "comps", "fallback": 0 },
+        "message": "High-grade slab — would you do this price?"
+      }
+    },
+    {
+      "name": "graded-9-counter-median",
+      "when": { "is_graded": true, "grade_gte": 9, "grade_lt": 9.5, "ratio_lt": 0.85 },
+      "action": {
+        "type": "counter",
+        "price": { "stat": "median", "from": "comps", "fallback": 0 },
+        "message": "Thanks for the offer — countering at comp median."
+      }
+    },
+    {
+      "name": "graded-low-decline-floor",
+      "when": { "is_graded": true, "ratio_lt": 0.65 },
+      "action": {
+        "type": "decline",
+        "message": "Graded card — that offer's below my floor."
+      }
+    },
+    {
       "name": "accept-near-asking",
       "when": { "ratio_gte": 0.85 },
       "action": { "type": "accept" }

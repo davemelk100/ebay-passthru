@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import { callTradingApi, configIssues, readConfig } from "@/lib/ebay";
 import {
   evaluateOffer,
+  extractGradeScore,
   loadRules,
+  normalizeGrader,
   type Decision,
   type OfferContext,
 } from "@/lib/counter-bid";
@@ -23,6 +25,53 @@ interface RawItem {
   Title?: string;
   StartPrice?: { "#text"?: string | number; "@_currencyID"?: string } | string | number;
   BuyItNowPrice?: { "#text"?: string | number; "@_currencyID"?: string } | string | number;
+  ItemSpecifics?: {
+    NameValueList?:
+      | { Name?: string; Value?: string | string[] }
+      | { Name?: string; Value?: string | string[] }[];
+  };
+}
+
+interface ExtractedGrade {
+  company: string;
+  score: number;
+  raw: string;
+}
+
+function extractGradeFromItem(item: RawItem | undefined): ExtractedGrade | undefined {
+  if (!item?.ItemSpecifics) return undefined;
+  const nvl = item.ItemSpecifics.NameValueList;
+  const list = nvl ? (Array.isArray(nvl) ? nvl : [nvl]) : [];
+  let gradeStr = "";
+  let graderStr = "";
+  for (const entry of list) {
+    const name = String(entry.Name ?? "").toLowerCase();
+    const valArr = Array.isArray(entry.Value) ? entry.Value : entry.Value ? [entry.Value] : [];
+    const val = valArr.map(String).join(" ").trim();
+    if (!val) continue;
+    if (name === "grade" || name === "grading" || name === "card grade") {
+      if (!gradeStr) gradeStr = val;
+    } else if (
+      name === "professional grader" ||
+      name === "grading service" ||
+      name === "grading company"
+    ) {
+      if (!graderStr) graderStr = val;
+    } else if (name === "certification" || name === "certification number") {
+      // sometimes contains "PSA 10" combined
+      if (!gradeStr) gradeStr = val;
+    }
+  }
+  const raw = [graderStr, gradeStr].filter(Boolean).join(" ").trim();
+  if (!raw) return undefined;
+  const score = extractGradeScore(gradeStr || raw);
+  const company = normalizeGrader(graderStr || gradeStr || raw);
+  if (!Number.isFinite(score) && !company) return undefined;
+  return {
+    company,
+    score: Number.isFinite(score) ? score : 0,
+    raw,
+  };
 }
 
 function numFromPrice(v: unknown): number {
@@ -102,6 +151,7 @@ export async function POST(req: Request) {
     | RawItem
     | undefined;
   const listingPrice = rawItem ? numFromPrice(rawItem.StartPrice ?? rawItem.BuyItNowPrice) : 0;
+  const grade = extractGradeFromItem(rawItem);
 
   const results: Array<OfferContext & { decision: Decision }> = rawOffers.map((o) => {
     const ctx: OfferContext = {
@@ -112,6 +162,7 @@ export async function POST(req: Request) {
       listingPrice,
       quantity: Number(o.Quantity ?? 1),
       comps,
+      grade,
     };
     return { ...ctx, decision: evaluateOffer(ruleFile.rules, ctx) };
   });

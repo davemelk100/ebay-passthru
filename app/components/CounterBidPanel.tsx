@@ -22,6 +22,7 @@ interface PreviewRow {
   offerPrice: number;
   listingPrice: number;
   quantity: number;
+  grade?: { company?: string; score?: number; raw?: string };
   decision: DecisionPayload;
 }
 
@@ -235,6 +236,7 @@ export default function CounterBidPanel({ env }: { env: "sandbox" | "production"
                 <th className="px-2 py-1">Buyer</th>
                 <th className="px-2 py-1">Offer</th>
                 <th className="px-2 py-1">Ratio</th>
+                <th className="px-2 py-1">Grade</th>
                 <th className="px-2 py-1">Matched rule</th>
                 <th className="px-2 py-1">Action</th>
                 <th className="px-2 py-1">Counter $</th>
@@ -251,6 +253,18 @@ export default function CounterBidPanel({ env }: { env: "sandbox" | "production"
                     <td className="px-2 py-1 font-mono text-xs">{r.buyerUserId ?? "—"}</td>
                     <td className="px-2 py-1">${r.offerPrice}</td>
                     <td className="px-2 py-1">{ratio}</td>
+                    <td className="px-2 py-1 text-xs">
+                      {r.grade && (r.grade.score ?? 0) > 0 ? (
+                        <span
+                          className="rounded bg-amber-100 px-1.5 py-0.5 font-mono text-amber-800 dark:bg-amber-900/40 dark:text-amber-200"
+                          title={r.grade.raw}
+                        >
+                          {r.grade.company || "?"} {r.grade.score}
+                        </span>
+                      ) : (
+                        <span className="text-neutral-400">raw</span>
+                      )}
+                    </td>
                     <td className="px-2 py-1 text-xs text-neutral-500">
                       {r.decision.matchedRule ?? r.decision.reason ?? "—"}
                     </td>

@@ -25,6 +25,12 @@ export interface Condition {
   offer_gte?: number;
   offer_lt?: number;
   comps_min_count?: number;
+
+  // Graded card support — populated when GetItem returns a Grade item-specific.
+  is_graded?: boolean; // true requires a numeric grade > 0
+  grade_gte?: number; // e.g. 9 (PSA 9 or better)
+  grade_lt?: number;
+  grader_in?: string[]; // normalized codes, e.g. ["PSA", "BGS", "SGC", "CSG"]
 }
 
 export type StatName = "median" | "mean" | "min" | "max" | "p25" | "p50" | "p75" | "p90";
@@ -74,6 +80,11 @@ export interface OfferContext {
   listingPrice: number;
   quantity: number;
   comps?: number[];
+  grade?: {
+    company?: string; // normalized: PSA, BGS, SGC, CSG, HGA, or "" if unknown
+    score?: number; // numeric grade extracted from item specifics, e.g. 9, 9.5, 10
+    raw?: string; // original label from eBay, e.g. "PSA 10 Gem Mint"
+  };
 }
 
 export type Decision =
@@ -171,7 +182,42 @@ function matches(when: Condition, ctx: OfferContext): boolean {
   if (when.offer_gte !== undefined && !(ctx.offerPrice >= when.offer_gte)) return false;
   if (when.offer_lt !== undefined && !(ctx.offerPrice < when.offer_lt)) return false;
   if (when.comps_min_count !== undefined && (ctx.comps?.length ?? 0) < when.comps_min_count) return false;
+  const score = ctx.grade?.score;
+  const hasGrade = typeof score === "number" && score > 0;
+  if (when.is_graded === true && !hasGrade) return false;
+  if (when.is_graded === false && hasGrade) return false;
+  if (when.grade_gte !== undefined && !(hasGrade && score! >= when.grade_gte)) return false;
+  if (when.grade_lt !== undefined && !(hasGrade && score! < when.grade_lt)) return false;
+  if (when.grader_in !== undefined) {
+    const c = ctx.grade?.company ?? "";
+    if (!when.grader_in.includes(c)) return false;
+  }
   return true;
+}
+
+// Normalize a grading company string from eBay's "Professional Grader" /
+// "Grading Service" / "Certification" item specifics into a short code.
+export function normalizeGrader(input: string | undefined | null): string {
+  if (!input) return "";
+  const s = String(input).toUpperCase();
+  if (s.includes("PSA") || s.includes("PROFESSIONAL SPORTS")) return "PSA";
+  if (s.includes("BGS") || s.includes("BECKETT")) return "BGS";
+  if (s.includes("SGC") || s.includes("SPORTSCARD GUARANTY")) return "SGC";
+  if (s.includes("CSG") || s.includes("CERTIFIED SPORTS")) return "CSG";
+  if (s.includes("HGA") || s.includes("HYBRID GRADING")) return "HGA";
+  if (s.includes("ISA")) return "ISA";
+  if (s.includes("CGC")) return "CGC";
+  return "";
+}
+
+// Extract a numeric grade from item specifics. Handles "10", "9.5", "Gem Mint 10",
+// "PSA 10", etc. Returns NaN if no number found.
+export function extractGradeScore(raw: string | undefined | null): number {
+  if (!raw) return NaN;
+  const m = String(raw).match(/(\d+(?:\.\d+)?)/);
+  if (!m) return NaN;
+  const n = Number.parseFloat(m[1]);
+  return Number.isFinite(n) ? n : NaN;
 }
 
 // ---------- Evaluator ----------
