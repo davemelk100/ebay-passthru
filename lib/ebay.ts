@@ -163,7 +163,7 @@ async function refreshAccessToken(cfg: EbayConfig): Promise<string> {
   return json.access_token;
 }
 
-async function getAccessToken(cfg: EbayConfig): Promise<string> {
+export async function getAccessToken(cfg: EbayConfig): Promise<string> {
   if (cachedAccessToken && cachedAccessToken.expiresAt > Date.now()) {
     return cachedAccessToken.token;
   }

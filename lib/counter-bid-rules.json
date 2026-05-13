@@ -1,0 +1,36 @@
+{
+  "_doc": "Counter-bid rules. Evaluated top to bottom; first match wins. See lib/counter-bid.ts for the type contract.",
+  "rules": [
+    {
+      "name": "accept-near-asking",
+      "when": { "ratio_gte": 0.85 },
+      "action": { "type": "accept" }
+    },
+    {
+      "name": "counter-to-comp-median",
+      "when": { "ratio_gte": 0.6, "ratio_lt": 0.85, "comps_min_count": 3 },
+      "action": {
+        "type": "counter",
+        "price": { "stat": "median", "from": "comps" },
+        "message": "Thanks for the offer! Would you do this price?"
+      }
+    },
+    {
+      "name": "counter-mid-range-no-comps",
+      "when": { "ratio_gte": 0.6, "ratio_lt": 0.85 },
+      "action": {
+        "type": "counter",
+        "price": { "stat": "p75", "from": "comps", "fallback": 0 },
+        "message": "Thanks for the offer! Would you do this price?"
+      }
+    },
+    {
+      "name": "decline-lowballs",
+      "when": { "ratio_lt": 0.6 },
+      "action": {
+        "type": "decline",
+        "message": "Thanks, but this is below my floor."
+      }
+    }
+  ]
+}

@@ -16,6 +16,7 @@ export const DESTRUCTIVE_CALLS = new Set<string>([
   "EndItem",
   "EndItems",
   "EndFixedPriceItem",
+  "RespondToBestOffer",
 ]);
 
 export const SAMPLE_BODIES: Record<string, string> = {
@@ -81,4 +82,13 @@ export const SAMPLE_BODIES: Record<string, string> = {
 </Item>`,
   EndItem: `<ItemID>REPLACE_WITH_ITEM_ID</ItemID>
 <EndingReason>NotAvailable</EndingReason>`,
+  GetBestOffers: `<ItemID>REPLACE_WITH_ITEM_ID</ItemID>
+<BestOfferStatus>All</BestOfferStatus>
+<DetailLevel>ReturnAll</DetailLevel>`,
+  RespondToBestOffer: `<ItemID>REPLACE_WITH_ITEM_ID</ItemID>
+<BestOfferID>REPLACE_WITH_BEST_OFFER_ID</BestOfferID>
+<Action>Counter</Action>
+<CounterOfferPrice currencyID="USD">9.99</CounterOfferPrice>
+<CounterOfferQuantity>1</CounterOfferQuantity>
+<SellerResponse>Thanks for the offer — would you consider this counter?</SellerResponse>`,
 };
