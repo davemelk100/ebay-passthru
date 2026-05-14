@@ -35,13 +35,13 @@ const SAMPLES: Sample[] = [
     label: "PaymentPolicies",
     method: "GET",
     path: "/sell/account/v1/payment_policy?marketplace_id=EBAY_US",
-    hint: "Configured payment business policies.",
+    hint: "⚠️ Requires Business Policy opt-in (free, one-time, at https://www.bizpolicy.ebay.com). Returns 20403 \"User is not eligible for Business Policy\" otherwise.",
   },
   {
     label: "FulfillmentPolicies",
     method: "GET",
     path: "/sell/account/v1/fulfillment_policy?marketplace_id=EBAY_US",
-    hint: "Shipping & dispatch policies.",
+    hint: "⚠️ Requires Business Policy opt-in (same as PaymentPolicies above). Returns 20403 otherwise.",
   },
   {
     label: "Orders",
