@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { callTradingApi } from "@/lib/ebay";
 import { requireEbayConfig } from "@/lib/api-guards";
+import { extractArray, getResponse } from "@/lib/ebay-xml";
 import type { InventoryItem } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -84,12 +85,12 @@ export async function POST(req: Request) {
       );
     }
 
-    const parsed = result.parsed as Record<string, unknown> | null;
-    const resp = parsed?.GetSellerListResponse as Record<string, unknown> | undefined;
-    const itemArray = (resp?.ItemArray as Record<string, unknown> | undefined)?.Item;
-    const rawItems = itemArray
-      ? ((Array.isArray(itemArray) ? itemArray : [itemArray]) as RawItem[])
-      : [];
+    const rawItems = extractArray<RawItem>(
+      result.parsed,
+      "GetSellerListResponse",
+      "ItemArray",
+      "Item",
+    );
 
     // GetSellerList returns ended/sold items too — filter unless caller asked otherwise.
     for (const raw of rawItems) {
@@ -98,6 +99,7 @@ export async function POST(req: Request) {
       items.push(normalizeItem(raw));
     }
 
+    const resp = getResponse(result.parsed, "GetSellerListResponse");
     const pagination = resp?.PaginationResult as Record<string, unknown> | undefined;
     totalEntries = Number(pagination?.TotalNumberOfEntries ?? items.length);
     totalPages = Number(pagination?.TotalNumberOfPages ?? 1);

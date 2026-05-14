@@ -1,6 +1,7 @@
 import "server-only";
 import { XMLParser } from "fast-xml-parser";
 import { curlRequest } from "./curl";
+import { asArray } from "./ebay-xml";
 
 export type EbayEnv = "sandbox" | "production";
 
@@ -195,18 +196,12 @@ export async function callTradingApi(
 
 function extractErrors(resp: Record<string, unknown> | undefined): EbayError[] {
   if (!resp) return [];
-  const raw = resp.Errors;
-  if (!raw) return [];
-  const list = Array.isArray(raw) ? raw : [raw];
-  return list.map((e) => {
-    const obj = e as Record<string, unknown>;
-    return {
-      code: stringOrUndefined(obj.ErrorCode),
-      shortMessage: stringOrUndefined(obj.ShortMessage),
-      longMessage: stringOrUndefined(obj.LongMessage),
-      severity: stringOrUndefined(obj.SeverityCode),
-    };
-  });
+  return asArray<Record<string, unknown>>(resp.Errors).map((obj) => ({
+    code: stringOrUndefined(obj.ErrorCode),
+    shortMessage: stringOrUndefined(obj.ShortMessage),
+    longMessage: stringOrUndefined(obj.LongMessage),
+    severity: stringOrUndefined(obj.SeverityCode),
+  }));
 }
 
 function stringOrUndefined(v: unknown): string | undefined {

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { callTradingApi } from "@/lib/ebay";
 import { blockIfProduction, requireEbayConfig } from "@/lib/api-guards";
+import { extractArray, getPath } from "@/lib/ebay-xml";
 import type { ClearItemResult } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -44,19 +45,24 @@ export async function POST(req: Request) {
         { status: 502 },
       );
     }
-    const parsed = result.parsed as Record<string, unknown> | null;
-    const resp = parsed?.GetMyeBaySellingResponse as Record<string, unknown> | undefined;
-    const active = resp?.ActiveList as Record<string, unknown> | undefined;
-    const itemArray = (active?.ItemArray as Record<string, unknown> | undefined)?.Item;
-    const rawItems = itemArray
-      ? (Array.isArray(itemArray) ? itemArray : [itemArray])
-      : [];
+    const rawItems = extractArray<{ ItemID?: string | number }>(
+      result.parsed,
+      "GetMyeBaySellingResponse",
+      "ActiveList",
+      "ItemArray",
+      "Item",
+    );
     for (const it of rawItems) {
-      const id = (it as { ItemID?: string | number }).ItemID;
-      if (id !== undefined && id !== null) itemIds.push(String(id));
+      if (it.ItemID !== undefined && it.ItemID !== null) itemIds.push(String(it.ItemID));
     }
-    const pagination = active?.PaginationResult as Record<string, unknown> | undefined;
-    totalPages = Number(pagination?.TotalNumberOfPages ?? 1);
+    totalPages = Number(
+      getPath(result.parsed, [
+        "GetMyeBaySellingResponse",
+        "ActiveList",
+        "PaginationResult",
+        "TotalNumberOfPages",
+      ]) ?? 1,
+    );
   }
 
   if (itemIds.length === 0) {

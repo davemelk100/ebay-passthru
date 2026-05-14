@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { callTradingApi } from "@/lib/ebay";
 import { requireEbayConfig } from "@/lib/api-guards";
+import { asArray, extractArray, getPath } from "@/lib/ebay-xml";
 import {
   evaluateOffer,
   extractGradeScore,
@@ -41,14 +42,14 @@ interface ExtractedGrade {
 
 function extractGradeFromItem(item: RawItem | undefined): ExtractedGrade | undefined {
   if (!item?.ItemSpecifics) return undefined;
-  const nvl = item.ItemSpecifics.NameValueList;
-  const list = nvl ? (Array.isArray(nvl) ? nvl : [nvl]) : [];
+  const list = asArray<{ Name?: string; Value?: string | string[] }>(
+    item.ItemSpecifics.NameValueList,
+  );
   let gradeStr = "";
   let graderStr = "";
   for (const entry of list) {
     const name = String(entry.Name ?? "").toLowerCase();
-    const valArr = Array.isArray(entry.Value) ? entry.Value : entry.Value ? [entry.Value] : [];
-    const val = valArr.map(String).join(" ").trim();
+    const val = asArray<string>(entry.Value).map(String).join(" ").trim();
     if (!val) continue;
     if (name === "grade" || name === "grading" || name === "card grade") {
       if (!gradeStr) gradeStr = val;
@@ -135,17 +136,14 @@ export async function POST(req: Request) {
     cfg,
   );
 
-  const offersParsed = offersResult.parsed as Record<string, unknown> | null;
-  const offersResp = offersParsed?.GetBestOffersResponse as Record<string, unknown> | undefined;
-  const offerArray = (offersResp?.BestOfferArray as Record<string, unknown> | undefined)?.BestOffer;
-  const rawOffers = offerArray
-    ? ((Array.isArray(offerArray) ? offerArray : [offerArray]) as RawBestOffer[])
-    : [];
+  const rawOffers = extractArray<RawBestOffer>(
+    offersResult.parsed,
+    "GetBestOffersResponse",
+    "BestOfferArray",
+    "BestOffer",
+  );
 
-  const itemParsed = itemResult.parsed as Record<string, unknown> | null;
-  const rawItem = (itemParsed?.GetItemResponse as Record<string, unknown> | undefined)?.Item as
-    | RawItem
-    | undefined;
+  const rawItem = getPath(itemResult.parsed, ["GetItemResponse", "Item"]) as RawItem | undefined;
   const listingPrice = rawItem ? numFromPrice(rawItem.StartPrice ?? rawItem.BuyItNowPrice) : 0;
   const grade = extractGradeFromItem(rawItem);
 

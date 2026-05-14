@@ -41,8 +41,8 @@ export default function Home() {
 
       <div className="space-y-6">
         <FeedView env={cfg.env} />
-        <CounterBidPanel env={cfg.env} />
         <CallPanel env={cfg.env} />
+        <CounterBidPanel env={cfg.env} />
         <SellPanel env={cfg.env} />
         <CrudCheck />
       </div>

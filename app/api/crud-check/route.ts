@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { callTradingApi, type EbayCallResult } from "@/lib/ebay";
 import { blockIfProduction, requireEbayConfig } from "@/lib/api-guards";
+import { getPath } from "@/lib/ebay-xml";
 import { SAMPLE_BODIES } from "@/lib/samples";
 
 export const runtime = "nodejs";
@@ -141,8 +142,6 @@ export async function POST(req: Request) {
 }
 
 function readItemId(result: EbayCallResult): string | undefined {
-  const parsed = result.parsed as Record<string, unknown> | null;
-  const resp = parsed?.AddItemResponse as Record<string, unknown> | undefined;
-  const id = resp?.ItemID;
+  const id = getPath(result.parsed, ["AddItemResponse", "ItemID"]);
   return id !== undefined && id !== null ? String(id) : undefined;
 }
