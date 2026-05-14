@@ -2,89 +2,33 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRememberedItemId } from "./useRememberedItemId";
-
-interface InventoryItem {
-  itemId: string;
-  title: string;
-  sku: string;
-  quantity: number;
-  quantitySold: number;
-  price: string;
-  currency: string;
-  listingType: string;
-  listingStatus: string;
-  timeLeft: string;
-  viewItemUrl: string;
-  startTime: string;
-  endTime: string;
-  primaryCategoryId: string;
-  primaryCategoryName: string;
-  pictureUrls: string[];
-}
-
-interface InventoryResult {
-  ok: boolean;
-  fetched: number;
-  totalEntries?: number;
-  pagesFetched: number;
-  totalPages?: number;
-  truncated?: boolean;
-  durationMs: number;
-  items?: InventoryItem[];
-  errors?: { code?: string; shortMessage?: string; longMessage?: string }[];
-  error?: string;
-  missing?: string[];
-  stoppedOnPage?: number;
-}
-
-interface ClearResult {
-  ok: boolean;
-  foundCount?: number;
-  endedCount?: number;
-  failedCount?: number;
-  durationMs?: number;
-  results?: { itemId: string; ended: boolean; ack?: string; errors: unknown[] }[];
-  error?: string;
-  missing?: string[];
-  hint?: string;
-}
+import { useApiCall } from "./useApiCall";
+import type { ClearResult, InventoryResult } from "@/lib/types";
 
 export default function FeedView({ env }: { env: "sandbox" | "production" }) {
-  const [pullLoading, setPullLoading] = useState(false);
-  const [pull, setPull] = useState<InventoryResult | null>(null);
-  const [clearLoading, setClearLoading] = useState(false);
-  const [clear, setClear] = useState<ClearResult | null>(null);
+  const {
+    data: pull,
+    error: pullError,
+    loading: pullLoading,
+    run: runPull,
+    reset: resetPull,
+  } = useApiCall<InventoryResult>();
+  const {
+    data: clear,
+    error: clearError,
+    loading: clearLoading,
+    run: runClear,
+    reset: resetClear,
+  } = useApiCall<ClearResult>();
   const [rememberedItemId, setRememberedItemId] = useRememberedItemId();
   const [includeEnded, setIncludeEnded] = useState(false);
 
   const pullAll = useCallback(
     async (opts?: { silent?: boolean }) => {
-      setPullLoading(true);
-      if (!opts?.silent) {
-        setPull(null);
-        setClear(null);
-      }
-      try {
-        const res = await fetch("/api/inventory", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ entriesPerPage: 100, includeEnded }),
-        });
-        const data = (await res.json()) as InventoryResult;
-        setPull(data);
-      } catch (e) {
-        setPull({
-          ok: false,
-          fetched: 0,
-          pagesFetched: 0,
-          durationMs: 0,
-          error: (e as Error).message,
-        });
-      } finally {
-        setPullLoading(false);
-      }
+      if (!opts?.silent) resetClear();
+      await runPull("/api/inventory", { entriesPerPage: 100, includeEnded }, { silent: opts?.silent });
     },
-    [includeEnded],
+    [includeEnded, runPull, resetClear],
   );
 
   // Auto-refresh when the user toggles include-ended after the first pull.
@@ -103,22 +47,8 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
     const typed = window.prompt(`${intro}\n\nType "${challenge}" to proceed:`);
     if (typed !== challenge) return;
 
-    setClearLoading(true);
-    setClear(null);
-    setPull(null);
-    try {
-      const res = await fetch("/api/inventory/clear", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(isProd ? { allowProduction: true } : {}),
-      });
-      const data = (await res.json()) as ClearResult;
-      setClear(data);
-    } catch (e) {
-      setClear({ ok: false, error: (e as Error).message });
-    } finally {
-      setClearLoading(false);
-    }
+    resetPull();
+    await runClear("/api/inventory/clear", isProd ? { allowProduction: true } : {});
   }
 
   return (
@@ -156,15 +86,15 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
         </div>
       </header>
 
-      {clear && (
+      {(clear || clearError) && (
         <div className="mb-3 rounded-md border border-neutral-200 bg-neutral-50 p-3 dark:border-neutral-800 dark:bg-neutral-950">
-          {clear.error ? (
+          {clearError || clear?.error ? (
             <p className="text-xs text-red-600">
-              {clear.error}
-              {clear.hint && <span className="block text-neutral-500">{clear.hint}</span>}
-              {clear.missing && <span className="block">Missing: {clear.missing.join(", ")}</span>}
+              {clearError ?? clear?.error}
+              {clear?.hint && <span className="block text-neutral-500">{clear.hint}</span>}
+              {clear?.missing && <span className="block">Missing: {clear.missing.join(", ")}</span>}
             </p>
-          ) : (
+          ) : clear ? (
             <div className="text-xs">
               <div className="mb-1 flex flex-wrap gap-3 text-neutral-500">
                 <span>
@@ -192,26 +122,23 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
                     .map((r) => (
                       <li key={r.itemId} className="font-mono text-[11px] text-red-600">
                         {r.itemId} — failed{" "}
-                        {(r.errors as { shortMessage?: string }[])
-                          .map((e) => e.shortMessage)
-                          .filter(Boolean)
-                          .join("; ")}
+                        {r.errors.map((e) => e.shortMessage).filter(Boolean).join("; ")}
                       </li>
                     ))}
                 </ul>
               )}
             </div>
-          )}
+          ) : null}
         </div>
       )}
 
-      {pull ? (
+      {pull || pullError ? (
         <div className="mb-3">
-          {pull.error || pull.missing ? (
+          {pullError || pull?.error || pull?.missing ? (
             <p className="text-xs text-red-600">
-              {pull.error ?? "Missing env vars: " + (pull.missing ?? []).join(", ")}
+              {pullError ?? pull?.error ?? "Missing env vars: " + (pull?.missing ?? []).join(", ")}
             </p>
-          ) : (
+          ) : pull ? (
             <>
               <div className="mb-2 flex flex-wrap gap-3 text-xs text-neutral-500">
                 <span>
@@ -325,7 +252,7 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
                 <p className="text-xs text-neutral-500">No items returned.</p>
               )}
             </>
-          )}
+          ) : null}
         </div>
       ) : (
         <p className="text-xs text-neutral-500">

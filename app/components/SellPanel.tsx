@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useApiCall } from "./useApiCall";
 
 type Method = "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
 
@@ -55,8 +56,7 @@ export default function SellPanel({ env }: { env: "sandbox" | "production" }) {
   const [method, setMethod] = useState<Method>("GET");
   const [path, setPath] = useState<string>(SAMPLES[0].path);
   const [body, setBody] = useState<string>("");
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<SellResult | null>(null);
+  const { data: result, error, loading, run, reset, setError } = useApiCall<SellResult>();
   const [activeSample, setActiveSample] = useState<string>(SAMPLES[0].label);
 
   function pickSample(s: Sample) {
@@ -64,7 +64,7 @@ export default function SellPanel({ env }: { env: "sandbox" | "production" }) {
     setMethod(s.method);
     setPath(s.path);
     setBody(s.body ?? "");
-    setResult(null);
+    reset();
   }
 
   async function send() {
@@ -82,31 +82,17 @@ export default function SellPanel({ env }: { env: "sandbox" | "production" }) {
       try {
         parsedBody = JSON.parse(body);
       } catch (e) {
-        setResult({ error: `Body must be valid JSON. ${(e as Error).message}` });
+        setError(`Body must be valid JSON. ${(e as Error).message}`);
         return;
       }
     }
 
-    setLoading(true);
-    setResult(null);
-    try {
-      const res = await fetch("/api/sell", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          method,
-          path,
-          ...(parsedBody !== undefined ? { body: parsedBody } : {}),
-          ...(allowProduction ? { allowProduction: true } : {}),
-        }),
-      });
-      const data = (await res.json()) as SellResult;
-      setResult(data);
-    } catch (e) {
-      setResult({ error: (e as Error).message });
-    } finally {
-      setLoading(false);
-    }
+    await run("/api/sell", {
+      method,
+      path,
+      ...(parsedBody !== undefined ? { body: parsedBody } : {}),
+      ...(allowProduction ? { allowProduction: true } : {}),
+    });
   }
 
   const sample = SAMPLES.find((s) => s.label === activeSample);
@@ -197,20 +183,20 @@ export default function SellPanel({ env }: { env: "sandbox" | "production" }) {
         )}
       </div>
 
-      {result && (
+      {(result || error) && (
         <div className="mt-3">
-          {result.error && (
+          {(error || result?.error) && (
             <p className="mb-2 text-xs text-red-600">
-              {result.error}
-              {result.hint && (
+              {error ?? result?.error}
+              {result?.hint && (
                 <span className="block text-neutral-500">{result.hint}</span>
               )}
-              {result.missing && (
+              {result?.missing && (
                 <span className="block">Missing: {result.missing.join(", ")}</span>
               )}
             </p>
           )}
-          {result.body !== undefined && (
+          {result?.body !== undefined && (
             <pre className="max-h-96 overflow-auto rounded-md border border-neutral-200 bg-neutral-50 p-2 font-mono text-[11px] dark:border-neutral-800 dark:bg-neutral-950">
               {typeof result.body === "string"
                 ? result.body

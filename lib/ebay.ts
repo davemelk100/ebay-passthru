@@ -1,6 +1,6 @@
 import "server-only";
-import { execFile } from "node:child_process";
 import { XMLParser } from "fast-xml-parser";
+import { curlRequest } from "./curl";
 
 export type EbayEnv = "sandbox" | "production";
 
@@ -85,47 +85,6 @@ export function buildRequestBody(callName: string, innerXml: string, _cfg: EbayC
 </${callName}Request>`;
 }
 
-// eBay's edge rejects Node's TLS fingerprint when Trading API headers are present,
-// so we POST via the system `curl` binary instead of fetch.
-function curlPost(
-  url: string,
-  headers: Record<string, string>,
-  body: string,
-): Promise<{ status: number; text: string }> {
-  return new Promise((resolve, reject) => {
-    const STATUS_MARKER = "\n__EBAY_HTTP_STATUS__:";
-    const args = [
-      "-sS",
-      "-X",
-      "POST",
-      "--data-binary",
-      "@-",
-      "-w",
-      `${STATUS_MARKER}%{http_code}`,
-    ];
-    for (const [k, v] of Object.entries(headers)) {
-      args.push("-H", `${k}: ${v}`);
-    }
-    args.push(url);
-
-    const child = execFile(
-      "curl",
-      args,
-      { maxBuffer: 50 * 1024 * 1024, timeout: 60_000 },
-      (err, stdout) => {
-        if (err) return reject(err);
-        const idx = stdout.lastIndexOf(STATUS_MARKER);
-        if (idx < 0) {
-          return resolve({ status: 0, text: stdout });
-        }
-        const status = Number.parseInt(stdout.slice(idx + STATUS_MARKER.length).trim(), 10);
-        resolve({ status: Number.isFinite(status) ? status : 0, text: stdout.slice(0, idx) });
-      },
-    );
-    child.stdin?.end(body);
-  });
-}
-
 // Cached access token; refreshed automatically when expired/expiring.
 let cachedAccessToken: { token: string; expiresAt: number } | null = null;
 let inflightRefresh: Promise<string> | null = null;
@@ -143,8 +102,9 @@ async function refreshAccessToken(cfg: EbayConfig): Promise<string> {
     refresh_token: cfg.refreshToken,
   }).toString();
 
-  const { status, text } = await curlPost(
+  const { status, text } = await curlRequest(
     identityEndpoint(cfg.env),
+    "POST",
     {
       "Content-Type": "application/x-www-form-urlencoded",
       Authorization: `Basic ${basic}`,
@@ -190,8 +150,9 @@ export async function callTradingApi(
 
   const accessToken = await getAccessToken(cfg);
 
-  const { status, text: rawXml } = await curlPost(
+  const { status, text: rawXml } = await curlRequest(
     endpoint,
+    "POST",
     {
       "Content-Type": "text/xml",
       "X-EBAY-API-COMPATIBILITY-LEVEL": cfg.compatLevel,

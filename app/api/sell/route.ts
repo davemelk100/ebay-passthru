@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { configIssues, readConfig } from "@/lib/ebay";
+import { blockIfProduction, requireEbayConfig } from "@/lib/api-guards";
 import { callSellApi, type SellMethod } from "@/lib/ebay-sell";
 
 export const runtime = "nodejs";
@@ -35,27 +35,18 @@ export async function POST(req: Request) {
     );
   }
 
-  const cfg = readConfig();
-  const missing = configIssues(cfg);
-  if (missing.length > 0) {
-    return NextResponse.json(
-      { error: "Missing eBay credentials.", missing },
-      { status: 412 },
-    );
-  }
+  const guard = requireEbayConfig();
+  if (guard.response) return guard.response;
+  const { cfg } = guard;
 
-  if (cfg.env === "production" && MUTATING_METHODS.has(method) && !allowProduction) {
-    return NextResponse.json(
-      {
-        error: `${method} ${path} is blocked in production without an explicit opt-in.`,
-        hint: "Re-send with allowProduction:true to bypass — this call mutates real seller data.",
-        method,
-        path,
-        env: cfg.env,
-      },
-      { status: 412 },
-    );
-  }
+  const blocked = blockIfProduction(cfg, {
+    blocked: MUTATING_METHODS.has(method),
+    allowProduction,
+    error: `${method} ${path} is blocked in production without an explicit opt-in.`,
+    hint: "Re-send with allowProduction:true to bypass — this call mutates real seller data.",
+    details: { method, path, env: cfg.env },
+  });
+  if (blocked) return blocked;
 
   try {
     const result = await callSellApi(method, path, body.body, cfg);

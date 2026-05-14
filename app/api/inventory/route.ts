@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
-import { callTradingApi, configIssues, readConfig } from "@/lib/ebay";
+import { callTradingApi } from "@/lib/ebay";
+import { requireEbayConfig } from "@/lib/api-guards";
+import type { InventoryItem } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,25 +21,6 @@ interface RawItem {
   ListingDetails?: { ViewItemURL?: string; StartTime?: string; EndTime?: string };
   PrimaryCategory?: { CategoryID?: string | number; CategoryName?: string };
   PictureDetails?: { PictureURL?: string | string[]; GalleryURL?: string };
-}
-
-interface NormalizedItem {
-  itemId: string;
-  title: string;
-  sku: string;
-  quantity: number;
-  quantitySold: number;
-  price: string;
-  currency: string;
-  listingType: string;
-  listingStatus: string;
-  timeLeft: string;
-  viewItemUrl: string;
-  startTime: string;
-  endTime: string;
-  primaryCategoryId: string;
-  primaryCategoryName: string;
-  pictureUrls: string[];
 }
 
 // Pulls every currently-active listing via GetSellerList using a forward
@@ -63,21 +46,16 @@ export async function POST(req: Request) {
     daysBack = Math.max(0, 119 - daysAhead);
   }
 
-  const cfg = readConfig();
-  const missing = configIssues(cfg);
-  if (missing.length > 0) {
-    return NextResponse.json(
-      { ok: false, error: "Missing eBay credentials.", missing },
-      { status: 412 },
-    );
-  }
+  const guard = requireEbayConfig({ okFlag: true });
+  if (guard.response) return guard.response;
+  const { cfg } = guard;
 
   const now = new Date();
   const endFrom = new Date(now.getTime() - daysBack * 24 * 60 * 60 * 1000).toISOString();
   const endTo = new Date(now.getTime() + daysAhead * 24 * 60 * 60 * 1000).toISOString();
 
   const started = Date.now();
-  const items: NormalizedItem[] = [];
+  const items: InventoryItem[] = [];
   let totalEntries = 0;
   let totalPages = 1;
   let lastPageFetched = 0;
@@ -140,7 +118,7 @@ export async function POST(req: Request) {
   });
 }
 
-function normalizeItem(raw: RawItem): NormalizedItem {
+function normalizeItem(raw: RawItem): InventoryItem {
   const cp = raw.SellingStatus?.CurrentPrice;
   let price = "";
   let currency = "";

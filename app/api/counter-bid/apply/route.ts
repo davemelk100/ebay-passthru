@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
-import { callTradingApi, configIssues, readConfig } from "@/lib/ebay";
+import { callTradingApi } from "@/lib/ebay";
+import { blockIfProduction, requireEbayConfig } from "@/lib/api-guards";
+import type { ApplyDecisionResult } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,15 +15,6 @@ interface DecisionEnvelope {
   message?: string;
   counterPrice?: number;
   counterQuantity?: number;
-}
-
-interface ApplyResult {
-  itemId: string;
-  bestOfferId: string;
-  action: string;
-  ok: boolean;
-  ack?: string;
-  errors: { code?: string; shortMessage?: string; longMessage?: string }[];
 }
 
 function escapeXml(s: string): string {
@@ -44,28 +37,21 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Provide a non-empty `decisions` array." }, { status: 400 });
   }
 
-  const cfg = readConfig();
-  const missing = configIssues(cfg);
-  if (missing.length > 0) {
-    return NextResponse.json(
-      { ok: false, error: "Missing eBay credentials.", missing },
-      { status: 412 },
-    );
-  }
+  const guard = requireEbayConfig({ okFlag: true });
+  if (guard.response) return guard.response;
+  const { cfg } = guard;
 
-  if (cfg.env === "production" && !allowProduction) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: "Counter-bid apply is blocked on production without explicit opt-in.",
-        hint: "Re-send with allowProduction:true — this responds to real buyer offers.",
-      },
-      { status: 412 },
-    );
-  }
+  const blocked = blockIfProduction(cfg, {
+    blocked: true,
+    allowProduction,
+    error: "Counter-bid apply is blocked on production without explicit opt-in.",
+    hint: "Re-send with allowProduction:true — this responds to real buyer offers.",
+    okFlag: true,
+  });
+  if (blocked) return blocked;
 
   const started = Date.now();
-  const results: ApplyResult[] = [];
+  const results: ApplyDecisionResult[] = [];
 
   for (const d of body.decisions) {
     if (!d.itemId || !d.bestOfferId || !d.action) {

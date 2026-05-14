@@ -1,6 +1,10 @@
 import "server-only";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import type { OfferContext } from "./types";
+
+// Re-export so existing imports (`from "@/lib/counter-bid"`) keep working.
+export type { OfferContext } from "./types";
 
 // ---------- Rule format ----------
 //
@@ -71,21 +75,6 @@ export interface RuleFile {
 }
 
 // ---------- Inputs / outputs ----------
-
-export interface OfferContext {
-  itemId: string;
-  bestOfferId: string;
-  buyerUserId?: string;
-  offerPrice: number;
-  listingPrice: number;
-  quantity: number;
-  comps?: number[];
-  grade?: {
-    company?: string; // normalized: PSA, BGS, SGC, CSG, HGA, or "" if unknown
-    score?: number; // numeric grade extracted from item specifics, e.g. 9, 9.5, 10
-    raw?: string; // original label from eBay, e.g. "PSA 10 Gem Mint"
-  };
-}
 
 export type Decision =
   | {

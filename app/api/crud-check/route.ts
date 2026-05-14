@@ -1,10 +1,6 @@
 import { NextResponse } from "next/server";
-import {
-  callTradingApi,
-  configIssues,
-  readConfig,
-  type EbayCallResult,
-} from "@/lib/ebay";
+import { callTradingApi, type EbayCallResult } from "@/lib/ebay";
+import { blockIfProduction, requireEbayConfig } from "@/lib/api-guards";
 import { SAMPLE_BODIES } from "@/lib/samples";
 
 export const runtime = "nodejs";
@@ -22,14 +18,9 @@ interface StepReport {
 }
 
 export async function POST(req: Request) {
-  const cfg = readConfig();
-  const missing = configIssues(cfg);
-  if (missing.length > 0) {
-    return NextResponse.json(
-      { error: "Missing eBay credentials.", missing },
-      { status: 412 },
-    );
-  }
+  const guard = requireEbayConfig();
+  if (guard.response) return guard.response;
+  const { cfg } = guard;
 
   // Safety: never run CRUD against production by default — the Create step would publish a real listing.
   let allowProduction = false;
@@ -40,15 +31,13 @@ export async function POST(req: Request) {
     // no body — fine
   }
 
-  if (cfg.env === "production" && !allowProduction) {
-    return NextResponse.json(
-      {
-        error:
-          "CRUD check is blocked in production unless allowProduction:true is passed — AddItem would publish a real listing.",
-      },
-      { status: 412 },
-    );
-  }
+  const blocked = blockIfProduction(cfg, {
+    blocked: true,
+    allowProduction,
+    error:
+      "CRUD check is blocked in production unless allowProduction:true is passed — AddItem would publish a real listing.",
+  });
+  if (blocked) return blocked;
 
   const report: StepReport[] = [];
   let itemId: string | undefined;

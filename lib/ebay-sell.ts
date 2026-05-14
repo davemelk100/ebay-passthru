@@ -1,6 +1,6 @@
 import "server-only";
-import { execFile } from "node:child_process";
 import { getAccessToken, type EbayConfig } from "./ebay";
+import { curlRequest } from "./curl";
 
 // Modern Sell REST API base URLs.
 // All Sell APIs (Inventory, Account, Fulfillment, Marketing, Negotiation, Finances) hang off these.
@@ -18,43 +18,6 @@ export interface SellCallResult {
 }
 
 export type SellMethod = "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
-
-// Mirrors curlPost in lib/ebay.ts, but supports arbitrary HTTP methods and
-// returns a parsed JSON body (or raw text if non-JSON). Sell APIs accept the
-// same OAuth access token via Authorization: Bearer.
-function curlRequest(
-  url: string,
-  method: SellMethod,
-  headers: Record<string, string>,
-  body: string | null,
-): Promise<{ status: number; text: string }> {
-  return new Promise((resolve, reject) => {
-    const STATUS_MARKER = "\n__EBAY_HTTP_STATUS__:";
-    const args = ["-sS", "-X", method, "-w", `${STATUS_MARKER}%{http_code}`];
-    for (const [k, v] of Object.entries(headers)) {
-      args.push("-H", `${k}: ${v}`);
-    }
-    if (body !== null) {
-      args.push("--data-binary", "@-");
-    }
-    args.push(url);
-
-    const child = execFile(
-      "curl",
-      args,
-      { maxBuffer: 50 * 1024 * 1024, timeout: 60_000 },
-      (err, stdout) => {
-        if (err) return reject(err);
-        const idx = stdout.lastIndexOf(STATUS_MARKER);
-        if (idx < 0) return resolve({ status: 0, text: stdout });
-        const status = Number.parseInt(stdout.slice(idx + STATUS_MARKER.length).trim(), 10);
-        resolve({ status: Number.isFinite(status) ? status : 0, text: stdout.slice(0, idx) });
-      },
-    );
-    if (body !== null && child.stdin) child.stdin.end(body);
-    else if (child.stdin) child.stdin.end();
-  });
-}
 
 export async function callSellApi(
   method: SellMethod,

@@ -2,60 +2,10 @@
 
 import { useState } from "react";
 import { useRememberedItemId } from "./useRememberedItemId";
-
-type ActionType = "accept" | "decline" | "counter" | "no-match";
-
-interface DecisionPayload {
-  action: ActionType;
-  matchedRule?: string;
-  message?: string;
-  counterPrice?: number;
-  counterQuantity?: number;
-  reason?: string;
-  priceSource?: { stat?: string; usedFallback?: boolean; value: number };
-}
-
-interface PreviewRow {
-  itemId: string;
-  bestOfferId: string;
-  buyerUserId?: string;
-  offerPrice: number;
-  listingPrice: number;
-  quantity: number;
-  grade?: { company?: string; score?: number; raw?: string };
-  decision: DecisionPayload;
-}
-
-interface PreviewResponse {
-  ok?: boolean;
-  error?: string;
-  mode?: string;
-  itemId?: string;
-  title?: string;
-  listingPrice?: number;
-  offerCount?: number;
-  ruleCount?: number;
-  rulesPath?: string;
-  compsCount?: number;
-  results?: PreviewRow[];
-}
-
-interface ApplyResult {
-  ok?: boolean;
-  appliedCount?: number;
-  failedCount?: number;
-  durationMs?: number;
-  error?: string;
-  hint?: string;
-  results?: { itemId: string; bestOfferId: string; action: string; ok: boolean; ack?: string; errors: { shortMessage?: string }[] }[];
-}
-
-interface Override {
-  action: ActionType;
-  counterPrice?: number;
-  counterQuantity?: number;
-  message?: string;
-}
+import { useApiCall } from "./useApiCall";
+import { OfferTable, type Override } from "./counter-bid/OfferTable";
+import { ApplyResult } from "./counter-bid/ApplyResult";
+import type { ApplyResponse, PreviewResponse } from "@/lib/types";
 
 const SYNTHETIC_PLACEHOLDER = `[
   {"bestOfferId":"O1","buyerUserId":"alice","offerPrice":140,"listingPrice":175,"quantity":1,"grade":{"company":"PSA","score":10,"raw":"PSA 10"}},
@@ -71,13 +21,41 @@ export default function CounterBidPanel({ env }: { env: "sandbox" | "production"
   const [itemId, setItemId] = useState<string>("");
   const [compsText, setCompsText] = useState<string>("");
   const [offersText, setOffersText] = useState<string>(SYNTHETIC_PLACEHOLDER);
-  const [previewLoading, setPreviewLoading] = useState(false);
-  const [preview, setPreview] = useState<PreviewResponse | null>(null);
   const [overrides, setOverrides] = useState<Record<string, Override>>({});
-  const [applyLoading, setApplyLoading] = useState(false);
-  const [applyResult, setApplyResult] = useState<ApplyResult | null>(null);
+  const previewCall = useApiCall<PreviewResponse>();
+  const applyCall = useApiCall<ApplyResponse>();
+  const {
+    data: preview,
+    error: previewError,
+    loading: previewLoading,
+    run: runPreviewCall,
+    reset: resetPreview,
+    setError: setPreviewError,
+  } = previewCall;
+  const {
+    data: applyResult,
+    error: applyError,
+    loading: applyLoading,
+    run: runApplyCall,
+    reset: resetApply,
+  } = applyCall;
 
   const effectiveItemId = itemId.trim() || rememberedItemId || "";
+
+  function seedOverridesFromPreview(data: PreviewResponse | null) {
+    if (!data?.results) return;
+    const seeded: Record<string, Override> = {};
+    for (const r of data.results) {
+      if (r.decision.action === "no-match") continue;
+      seeded[r.bestOfferId] = {
+        action: r.decision.action,
+        counterPrice: r.decision.counterPrice,
+        counterQuantity: r.decision.counterQuantity,
+        message: r.decision.message,
+      };
+    }
+    setOverrides(seeded);
+  }
 
   async function runPreview() {
     const comps = compsText
@@ -85,16 +63,19 @@ export default function CounterBidPanel({ env }: { env: "sandbox" | "production"
       .map((s) => Number.parseFloat(s))
       .filter((n) => Number.isFinite(n) && n > 0);
 
+    setOverrides({});
+    resetApply();
+
     if (mode === "synthetic") {
       let offers: unknown;
       try {
         offers = JSON.parse(offersText);
       } catch (e) {
-        setPreview({ error: `Offers JSON is invalid: ${(e as Error).message}` });
+        setPreviewError(`Offers JSON is invalid: ${(e as Error).message}`);
         return;
       }
       if (!Array.isArray(offers) || offers.length === 0) {
-        setPreview({ error: "Offers JSON must be a non-empty array." });
+        setPreviewError("Offers JSON must be a non-empty array.");
         return;
       }
       // Normalize: each offer needs an itemId; default to "SYNTHETIC".
@@ -103,75 +84,21 @@ export default function CounterBidPanel({ env }: { env: "sandbox" | "production"
         bestOfferId: typeof o.bestOfferId === "string" ? o.bestOfferId : `synth-${i}`,
         ...o,
       }));
-
-      setPreviewLoading(true);
-      setPreview(null);
-      setOverrides({});
-      setApplyResult(null);
-      try {
-        const res = await fetch("/api/counter-bid/preview", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ offers: normalized, comps }),
-        });
-        const data = (await res.json()) as PreviewResponse;
-        setPreview(data);
-        if (data.results) {
-          const seeded: Record<string, Override> = {};
-          for (const r of data.results) {
-            if (r.decision.action === "no-match") continue;
-            seeded[r.bestOfferId] = {
-              action: r.decision.action,
-              counterPrice: r.decision.counterPrice,
-              counterQuantity: r.decision.counterQuantity,
-              message: r.decision.message,
-            };
-          }
-          setOverrides(seeded);
-        }
-      } catch (e) {
-        setPreview({ error: (e as Error).message });
-      } finally {
-        setPreviewLoading(false);
-      }
+      const data = await runPreviewCall("/api/counter-bid/preview", { offers: normalized, comps });
+      seedOverridesFromPreview(data);
       return;
     }
 
     if (!effectiveItemId) {
-      setPreview({ error: "Set an ItemID (or click Use on a row in the Inventory table)." });
+      setPreviewError("Set an ItemID (or click Use on a row in the Inventory table).");
       return;
     }
 
-    setPreviewLoading(true);
-    setPreview(null);
-    setOverrides({});
-    setApplyResult(null);
-    try {
-      const res = await fetch("/api/counter-bid/preview", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ itemId: effectiveItemId, comps }),
-      });
-      const data = (await res.json()) as PreviewResponse;
-      setPreview(data);
-      if (data.results) {
-        const seeded: Record<string, Override> = {};
-        for (const r of data.results) {
-          if (r.decision.action === "no-match") continue;
-          seeded[r.bestOfferId] = {
-            action: r.decision.action,
-            counterPrice: r.decision.counterPrice,
-            counterQuantity: r.decision.counterQuantity,
-            message: r.decision.message,
-          };
-        }
-        setOverrides(seeded);
-      }
-    } catch (e) {
-      setPreview({ error: (e as Error).message });
-    } finally {
-      setPreviewLoading(false);
-    }
+    const data = await runPreviewCall("/api/counter-bid/preview", {
+      itemId: effectiveItemId,
+      comps,
+    });
+    seedOverridesFromPreview(data);
   }
 
   async function applyDecisions() {
@@ -196,21 +123,10 @@ export default function CounterBidPanel({ env }: { env: "sandbox" | "production"
         };
       });
 
-    setApplyLoading(true);
-    setApplyResult(null);
-    try {
-      const res = await fetch("/api/counter-bid/apply", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ decisions, ...(isProd ? { allowProduction: true } : {}) }),
-      });
-      const data = (await res.json()) as ApplyResult;
-      setApplyResult(data);
-    } catch (e) {
-      setApplyResult({ error: (e as Error).message });
-    } finally {
-      setApplyLoading(false);
-    }
+    await runApplyCall("/api/counter-bid/apply", {
+      decisions,
+      ...(isProd ? { allowProduction: true } : {}),
+    });
   }
 
   return (
@@ -227,9 +143,9 @@ export default function CounterBidPanel({ env }: { env: "sandbox" | "production"
             type="button"
             onClick={() => {
               setMode(m);
-              setPreview(null);
+              resetPreview();
               setOverrides({});
-              setApplyResult(null);
+              resetApply();
             }}
             className={`rounded px-3 py-1 font-medium ${
               mode === m
@@ -328,8 +244,8 @@ export default function CounterBidPanel({ env }: { env: "sandbox" | "production"
         )}
       </div>
 
-      {preview?.error && (
-        <p className="mb-2 text-xs text-red-600">{preview.error}</p>
+      {(previewError || preview?.error) && (
+        <p className="mb-2 text-xs text-red-600">{previewError ?? preview?.error}</p>
       )}
 
       {preview && !preview.error && (
@@ -348,163 +264,14 @@ export default function CounterBidPanel({ env }: { env: "sandbox" | "production"
       )}
 
       {preview?.results && preview.results.length > 0 && (
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="text-xs uppercase text-neutral-500">
-              <tr>
-                <th className="px-2 py-1">Buyer</th>
-                <th className="px-2 py-1">Offer</th>
-                <th className="px-2 py-1">Ratio</th>
-                <th className="px-2 py-1">Grade</th>
-                <th className="px-2 py-1">Matched rule</th>
-                <th className="px-2 py-1">Action</th>
-                <th className="px-2 py-1">Counter $</th>
-                <th className="px-2 py-1">Message</th>
-              </tr>
-            </thead>
-            <tbody>
-              {preview.results.map((r) => {
-                const ov = overrides[r.bestOfferId];
-                const action = ov?.action ?? r.decision.action;
-                const ratio = r.listingPrice > 0 ? (r.offerPrice / r.listingPrice).toFixed(2) : "—";
-                return (
-                  <tr key={r.bestOfferId} className="border-t border-neutral-100 dark:border-neutral-800">
-                    <td className="px-2 py-1 font-mono text-xs">{r.buyerUserId ?? "—"}</td>
-                    <td className="px-2 py-1">${r.offerPrice}</td>
-                    <td className="px-2 py-1">{ratio}</td>
-                    <td className="px-2 py-1 text-xs">
-                      {r.grade && (r.grade.score ?? 0) > 0 ? (
-                        <span
-                          className="rounded bg-amber-100 px-1.5 py-0.5 font-mono text-amber-800 dark:bg-amber-900/40 dark:text-amber-200"
-                          title={r.grade.raw}
-                        >
-                          {r.grade.company || "?"} {r.grade.score}
-                        </span>
-                      ) : (
-                        <span className="text-neutral-400">raw</span>
-                      )}
-                    </td>
-                    <td className="px-2 py-1 text-xs text-neutral-500">
-                      {r.decision.matchedRule ?? r.decision.reason ?? "—"}
-                    </td>
-                    <td className="px-2 py-1">
-                      <select
-                        value={action}
-                        onChange={(e) => {
-                          const next = e.target.value as ActionType;
-                          setOverrides((prev) => {
-                            const copy = { ...prev };
-                            if (next === "no-match") {
-                              delete copy[r.bestOfferId];
-                            } else {
-                              copy[r.bestOfferId] = {
-                                ...(copy[r.bestOfferId] ?? {
-                                  action: next,
-                                  counterPrice: r.decision.counterPrice,
-                                  counterQuantity: r.decision.counterQuantity ?? 1,
-                                  message: r.decision.message,
-                                }),
-                                action: next,
-                              };
-                            }
-                            return copy;
-                          });
-                        }}
-                        className="rounded border border-neutral-300 bg-neutral-50 px-1 py-0.5 text-xs dark:border-neutral-700 dark:bg-neutral-950"
-                      >
-                        <option value="accept">accept</option>
-                        <option value="decline">decline</option>
-                        <option value="counter">counter</option>
-                        <option value="no-match">skip</option>
-                      </select>
-                    </td>
-                    <td className="px-2 py-1">
-                      {action === "counter" ? (
-                        <input
-                          type="number"
-                          step="0.01"
-                          value={ov?.counterPrice ?? r.decision.counterPrice ?? ""}
-                          onChange={(e) => {
-                            const v = Number.parseFloat(e.target.value);
-                            setOverrides((prev) => ({
-                              ...prev,
-                              [r.bestOfferId]: {
-                                ...(prev[r.bestOfferId] ?? { action: "counter" }),
-                                action: "counter",
-                                counterPrice: Number.isFinite(v) ? v : 0,
-                              },
-                            }));
-                          }}
-                          className="w-20 rounded border border-neutral-300 bg-neutral-50 px-1 py-0.5 text-right font-mono text-xs dark:border-neutral-700 dark:bg-neutral-950"
-                        />
-                      ) : (
-                        <span className="text-xs text-neutral-400">—</span>
-                      )}
-                    </td>
-                    <td className="px-2 py-1">
-                      {(action === "counter" || action === "decline") && (
-                        <input
-                          type="text"
-                          value={ov?.message ?? r.decision.message ?? ""}
-                          onChange={(e) => {
-                            const v = e.target.value;
-                            setOverrides((prev) => ({
-                              ...prev,
-                              [r.bestOfferId]: {
-                                ...(prev[r.bestOfferId] ?? { action }),
-                                action,
-                                message: v,
-                              },
-                            }));
-                          }}
-                          className="w-full min-w-[12rem] rounded border border-neutral-300 bg-neutral-50 px-1 py-0.5 text-xs dark:border-neutral-700 dark:bg-neutral-950"
-                        />
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <OfferTable
+          results={preview.results}
+          overrides={overrides}
+          setOverrides={setOverrides}
+        />
       )}
 
-      {applyResult && (
-        <div className="mt-3 rounded-md border border-neutral-200 bg-neutral-50 p-3 text-xs dark:border-neutral-800 dark:bg-neutral-950">
-          {applyResult.error ? (
-            <p className="text-red-600">
-              {applyResult.error}
-              {applyResult.hint && <span className="block text-neutral-500">{applyResult.hint}</span>}
-            </p>
-          ) : (
-            <>
-              <div className="mb-1 text-neutral-500">
-                Applied:{" "}
-                <strong className="text-green-700 dark:text-green-400">
-                  {applyResult.appliedCount}
-                </strong>
-                {applyResult.failedCount ? (
-                  <>
-                    {" "}
-                    · Failed:{" "}
-                    <strong className="text-red-700 dark:text-red-400">{applyResult.failedCount}</strong>
-                  </>
-                ) : null}{" "}
-                · {applyResult.durationMs}ms
-              </div>
-              {applyResult.results &&
-                applyResult.results
-                  .filter((r) => !r.ok)
-                  .map((r) => (
-                    <div key={r.bestOfferId} className="font-mono text-[11px] text-red-600">
-                      {r.bestOfferId} → {r.action} failed:{" "}
-                      {r.errors.map((e) => e.shortMessage).filter(Boolean).join("; ")}
-                    </div>
-                  ))}
-            </>
-          )}
-        </div>
-      )}
+      <ApplyResult data={applyResult} error={applyError} />
     </section>
   );
 }

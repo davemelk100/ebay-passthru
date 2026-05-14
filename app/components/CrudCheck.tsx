@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useApiCall } from "./useApiCall";
 
 interface StepReport {
   step: "Create" | "Read" | "Update" | "Delete";
@@ -23,9 +24,8 @@ interface Summary {
 }
 
 export default function CrudCheck() {
-  const [loading, setLoading] = useState(false);
   const [allowProd, setAllowProd] = useState(false);
-  const [summary, setSummary] = useState<Summary | null>(null);
+  const { data: summary, error, loading, run: runApi } = useApiCall<Summary>();
 
   async function run() {
     if (
@@ -35,21 +35,7 @@ export default function CrudCheck() {
     ) {
       return;
     }
-    setLoading(true);
-    setSummary(null);
-    try {
-      const res = await fetch("/api/crud-check", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ allowProduction: allowProd }),
-      });
-      const data = (await res.json()) as Summary;
-      setSummary(data);
-    } catch (e) {
-      setSummary({ error: (e as Error).message });
-    } finally {
-      setLoading(false);
-    }
+    await runApi("/api/crud-check", { allowProduction: allowProd });
   }
 
   return (
@@ -81,10 +67,10 @@ export default function CrudCheck() {
         </label>
       </div>
 
-      {summary?.error && (
+      {(error || summary?.error) && (
         <p className="rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-700 dark:border-red-900/40 dark:bg-red-950/30">
-          {summary.error}
-          {summary.missing && summary.missing.length > 0
+          {error ?? summary?.error}
+          {summary?.missing && summary.missing.length > 0
             ? ` (missing: ${summary.missing.join(", ")})`
             : ""}
         </p>

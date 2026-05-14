@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { callTradingApi, configIssues, readConfig } from "@/lib/ebay";
+import { callTradingApi } from "@/lib/ebay";
+import { requireEbayConfig } from "@/lib/api-guards";
 import {
   evaluateOffer,
   extractGradeScore,
@@ -93,14 +94,9 @@ export async function POST(req: Request) {
     offers?: OfferContext[];
   };
 
-  const cfg = readConfig();
-  const missing = configIssues(cfg);
-  if (missing.length > 0) {
-    return NextResponse.json(
-      { ok: false, error: "Missing eBay credentials.", missing },
-      { status: 412 },
-    );
-  }
+  const guard = requireEbayConfig({ okFlag: true });
+  if (guard.response) return guard.response;
+  const { cfg } = guard;
 
   const ruleFile = await loadRules();
   const comps = Array.isArray(body.comps) ? body.comps.filter((n) => typeof n === "number") : [];

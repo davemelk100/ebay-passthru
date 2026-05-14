@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { DESTRUCTIVE_CALLS, SAMPLE_BODIES } from "@/lib/samples";
 import { useRememberedItemId } from "./useRememberedItemId";
+import { useApiCall } from "./useApiCall";
 
 const CALLS = Object.keys(SAMPLE_BODIES);
 const PLACEHOLDER = "REPLACE_WITH_ITEM_ID";
@@ -41,8 +42,7 @@ interface ApiResult {
 export default function CallPanel({ env }: { env: "sandbox" | "production" }) {
   const [callName, setCallName] = useState<string>("GetUser");
   const [xml, setXml] = useState<string>(SAMPLE_BODIES.GetUser ?? "");
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<ApiResult | null>(null);
+  const { data: result, error, loading, run, reset } = useApiCall<ApiResult>();
   const [rememberedItemId, setRememberedItemId] = useRememberedItemId();
 
   function pickCall(name: string) {
@@ -55,7 +55,7 @@ export default function CallPanel({ env }: { env: "sandbox" | "production" }) {
       body = body.replace("[SANDBOX]", `[SANDBOX ${stamp}]`);
     }
     setXml(body);
-    setResult(null);
+    reset();
   }
 
   async function send() {
@@ -69,40 +69,18 @@ export default function CallPanel({ env }: { env: "sandbox" | "production" }) {
       if (!ok) return;
     }
 
-    setLoading(true);
-    setResult(null);
-    try {
-      const res = await fetch("/api/ebay", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          callName,
-          xml,
-          ...(allowProduction ? { allowProduction: true } : {}),
-        }),
-      });
-      const data = (await res.json()) as ApiResult;
-      setResult(data);
+    const data = await run("/api/ebay", {
+      callName,
+      xml,
+      ...(allowProduction ? { allowProduction: true } : {}),
+    });
+    if (!data) return;
 
-      if (data.ok && callName === "AddItem") {
-        const newId = extractItemIdFromResponse(data.parsed);
-        if (newId) setRememberedItemId(newId);
-      } else if (data.ok && callName === "EndItem" && rememberedItemId) {
-        setRememberedItemId(null);
-      }
-    } catch (e) {
-      setResult({
-        ok: false,
-        status: 0,
-        errors: [],
-        rawXml: "",
-        parsed: null,
-        endpoint: "",
-        durationMs: 0,
-        error: (e as Error).message,
-      });
-    } finally {
-      setLoading(false);
+    if (data.ok && callName === "AddItem") {
+      const newId = extractItemIdFromResponse(data.parsed);
+      if (newId) setRememberedItemId(newId);
+    } else if (data.ok && callName === "EndItem" && rememberedItemId) {
+      setRememberedItemId(null);
     }
   }
 
@@ -186,15 +164,27 @@ export default function CallPanel({ env }: { env: "sandbox" | "production" }) {
         >
           {loading ? "Sending…" : `Send ${callName}`}
         </button>
-        {result && (
+        {(result || error) && (
           <span className="text-xs text-neutral-500">
-            HTTP {result.status} · {result.durationMs}ms · Ack:{" "}
-            <strong className={result.ok ? "text-green-600" : "text-red-600"}>
-              {result.ack ?? (result.error ? "ERROR" : "—")}
-            </strong>
+            {result ? (
+              <>
+                HTTP {result.status} · {result.durationMs}ms · Ack:{" "}
+                <strong className={result.ok ? "text-green-600" : "text-red-600"}>
+                  {result.ack ?? (result.error ? "ERROR" : "—")}
+                </strong>
+              </>
+            ) : (
+              <strong className="text-red-600">ERROR</strong>
+            )}
           </span>
         )}
       </div>
+
+      {error && !result && (
+        <pre className="mt-4 max-h-96 overflow-auto rounded-md border border-red-200 bg-red-50 p-2 font-mono text-[11px] text-red-700 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-300">
+          {error}
+        </pre>
+      )}
 
       {result && (
         <div className="mt-4 grid gap-4 md:grid-cols-2">

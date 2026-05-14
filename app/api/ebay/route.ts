@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { callTradingApi, configIssues, readConfig } from "@/lib/ebay";
+import { blockIfProduction, requireEbayConfig } from "@/lib/api-guards";
 import { DESTRUCTIVE_CALLS } from "@/lib/samples";
 
 export const runtime = "nodejs";
@@ -21,30 +22,18 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Missing callName." }, { status: 400 });
   }
 
-  const cfg = readConfig();
-  const missing = configIssues(cfg);
-  if (missing.length > 0) {
-    return NextResponse.json(
-      {
-        error: "Missing eBay credentials.",
-        missing,
-        hint: "Copy .env.local.example to .env.local and fill in your keys.",
-      },
-      { status: 412 },
-    );
-  }
+  const guard = requireEbayConfig({ hint: true });
+  if (guard.response) return guard.response;
+  const { cfg } = guard;
 
-  if (cfg.env === "production" && DESTRUCTIVE_CALLS.has(callName) && !allowProduction) {
-    return NextResponse.json(
-      {
-        error: `${callName} is blocked in production without an explicit opt-in.`,
-        hint: "Re-send with allowProduction:true in the body to bypass — this call mutates real seller data.",
-        callName,
-        env: cfg.env,
-      },
-      { status: 412 },
-    );
-  }
+  const blocked = blockIfProduction(cfg, {
+    blocked: DESTRUCTIVE_CALLS.has(callName),
+    allowProduction,
+    error: `${callName} is blocked in production without an explicit opt-in.`,
+    hint: "Re-send with allowProduction:true in the body to bypass — this call mutates real seller data.",
+    details: { callName, env: cfg.env },
+  });
+  if (blocked) return blocked;
 
   try {
     const result = await callTradingApi(callName, xml, cfg);

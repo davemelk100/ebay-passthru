@@ -1,15 +1,10 @@
 import { NextResponse } from "next/server";
-import { callTradingApi, configIssues, readConfig } from "@/lib/ebay";
+import { callTradingApi } from "@/lib/ebay";
+import { blockIfProduction, requireEbayConfig } from "@/lib/api-guards";
+import type { ClearItemResult } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-interface EndResult {
-  itemId: string;
-  ended: boolean;
-  ack?: string;
-  errors: { code?: string; shortMessage?: string; longMessage?: string }[];
-}
 
 export async function POST(req: Request) {
   const body = (await req.json().catch(() => ({}))) as {
@@ -17,25 +12,18 @@ export async function POST(req: Request) {
   };
   const allowProduction = body.allowProduction === true;
 
-  const cfg = readConfig();
-  const missing = configIssues(cfg);
-  if (missing.length > 0) {
-    return NextResponse.json(
-      { ok: false, error: "Missing eBay credentials.", missing },
-      { status: 412 },
-    );
-  }
+  const guard = requireEbayConfig({ okFlag: true });
+  if (guard.response) return guard.response;
+  const { cfg } = guard;
 
-  if (cfg.env === "production" && !allowProduction) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: "Clear inventory is blocked on production without explicit opt-in.",
-        hint: "Re-send with allowProduction:true — this ends every active listing on the seller account.",
-      },
-      { status: 412 },
-    );
-  }
+  const blocked = blockIfProduction(cfg, {
+    blocked: true,
+    allowProduction,
+    error: "Clear inventory is blocked on production without explicit opt-in.",
+    hint: "Re-send with allowProduction:true — this ends every active listing on the seller account.",
+    okFlag: true,
+  });
+  if (blocked) return blocked;
 
   const started = Date.now();
 
@@ -84,7 +72,7 @@ export async function POST(req: Request) {
   }
 
   // End each active listing.
-  const results: EndResult[] = [];
+  const results: ClearItemResult[] = [];
   for (const id of itemIds) {
     const endXml = `<ItemID>${id}</ItemID><EndingReason>NotAvailable</EndingReason>`;
     const r = await callTradingApi("EndItem", endXml, cfg);
