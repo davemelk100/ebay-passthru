@@ -6,9 +6,6 @@ import type { InventoryItem } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-// A full pull of ~3k listings across 100-per-page costs ~30 sequential
-// Trading API round-trips and overruns Vercel's default 60s timeout.
-export const maxDuration = 300;
 
 interface RawItem {
   ItemID?: string | number;
@@ -27,26 +24,24 @@ interface RawItem {
   PictureDetails?: { PictureURL?: string | string[]; GalleryURL?: string };
 }
 
-// Pulls every currently-active listing via GetSellerList using a forward
-// EndTime window. Captures all active items (including long-running GTC
-// listings) regardless of when they were originally created, because eBay
-// keeps GTC EndTime rolling within the next ~30 days.
+// Fetches a single page of active listings via GetSellerList. The caller
+// drives pagination (page 1 first, then "load more" for page N+1) so a
+// fresh load only costs one Trading API round-trip instead of dozens.
 export async function POST(req: Request) {
   const body = (await req.json().catch(() => ({}))) as {
     entriesPerPage?: number;
-    maxPages?: number;
+    pageNumber?: number;
     daysAhead?: number;
     daysBack?: number;
     includeEnded?: boolean;
   };
-  const entriesPerPage = Math.min(200, Math.max(1, body.entriesPerPage ?? 100));
-  const maxPages = Math.min(500, Math.max(1, body.maxPages ?? 50));
+  const entriesPerPage = Math.min(200, Math.max(1, body.entriesPerPage ?? 10));
+  const pageNumber = Math.max(1, body.pageNumber ?? 1);
   const includeEnded = body.includeEnded === true;
   // eBay caps EndTimeFrom..EndTimeTo at ~120 days. Split when including ended.
   let daysAhead = Math.min(119, Math.max(1, body.daysAhead ?? (includeEnded ? 89 : 119)));
   let daysBack = Math.min(119, Math.max(0, body.daysBack ?? (includeEnded ? 30 : 0)));
   if (daysAhead + daysBack > 119) {
-    // Trim daysBack first so we keep forward coverage of active listings intact.
     daysBack = Math.max(0, 119 - daysAhead);
   }
 
@@ -59,79 +54,68 @@ export async function POST(req: Request) {
   const endTo = new Date(now.getTime() + daysAhead * 24 * 60 * 60 * 1000).toISOString();
 
   const started = Date.now();
-  const items: InventoryItem[] = [];
-  let totalEntries = 0;
-  let totalPages = 1;
-  let lastPageFetched = 0;
+  const xml =
+    `<EndTimeFrom>${endFrom}</EndTimeFrom>` +
+    `<EndTimeTo>${endTo}</EndTimeTo>` +
+    `<DetailLevel>ReturnAll</DetailLevel>` +
+    `<GranularityLevel>Fine</GranularityLevel>` +
+    `<Pagination><EntriesPerPage>${entriesPerPage}</EntriesPerPage><PageNumber>${pageNumber}</PageNumber></Pagination>`;
 
-  for (let page = 1; page <= maxPages; page++) {
-    const xml =
-      `<EndTimeFrom>${endFrom}</EndTimeFrom>` +
-      `<EndTimeTo>${endTo}</EndTimeTo>` +
-      `<DetailLevel>ReturnAll</DetailLevel>` +
-      `<GranularityLevel>Fine</GranularityLevel>` +
-      `<Pagination><EntriesPerPage>${entriesPerPage}</EntriesPerPage><PageNumber>${page}</PageNumber></Pagination>`;
-    let result;
-    try {
-      result = await callTradingApi("GetSellerList", xml, cfg);
-    } catch (err) {
-      return NextResponse.json(
-        {
-          ok: false,
-          fetched: items.length,
-          pagesFetched: page - 1,
-          stoppedOnPage: page,
-          error: err instanceof Error ? err.message : String(err),
-          stack: err instanceof Error ? err.stack : undefined,
-          durationMs: Date.now() - started,
-        },
-        { status: 502 },
-      );
-    }
-    lastPageFetched = page;
-
-    if (!result.ok) {
-      return NextResponse.json(
-        {
-          ok: false,
-          fetched: items.length,
-          pagesFetched: page - 1,
-          stoppedOnPage: page,
-          errors: result.errors,
-          durationMs: Date.now() - started,
-        },
-        { status: 502 },
-      );
-    }
-
-    const rawItems = extractArray<RawItem>(
-      result.parsed,
-      "GetSellerListResponse",
-      "ItemArray",
-      "Item",
+  let result;
+  try {
+    result = await callTradingApi("GetSellerList", xml, cfg);
+  } catch (err) {
+    return NextResponse.json(
+      {
+        ok: false,
+        fetched: 0,
+        pageNumber,
+        error: err instanceof Error ? err.message : String(err),
+        stack: err instanceof Error ? err.stack : undefined,
+        durationMs: Date.now() - started,
+      },
+      { status: 502 },
     );
-
-    // GetSellerList returns ended/sold items too — filter unless caller asked otherwise.
-    for (const raw of rawItems) {
-      const status = raw.SellingStatus?.ListingStatus;
-      if (!includeEnded && status && status !== "Active") continue;
-      items.push(normalizeItem(raw));
-    }
-
-    const resp = getResponse(result.parsed, "GetSellerListResponse");
-    const pagination = resp?.PaginationResult as Record<string, unknown> | undefined;
-    totalEntries = Number(pagination?.TotalNumberOfEntries ?? items.length);
-    totalPages = Number(pagination?.TotalNumberOfPages ?? 1);
-    if (page >= totalPages) break;
   }
+
+  if (!result.ok) {
+    return NextResponse.json(
+      {
+        ok: false,
+        fetched: 0,
+        pageNumber,
+        errors: result.errors,
+        durationMs: Date.now() - started,
+      },
+      { status: 502 },
+    );
+  }
+
+  const rawItems = extractArray<RawItem>(
+    result.parsed,
+    "GetSellerListResponse",
+    "ItemArray",
+    "Item",
+  );
+  const items: InventoryItem[] = [];
+  for (const raw of rawItems) {
+    const status = raw.SellingStatus?.ListingStatus;
+    if (!includeEnded && status && status !== "Active") continue;
+    items.push(normalizeItem(raw));
+  }
+
+  const resp = getResponse(result.parsed, "GetSellerListResponse");
+  const pagination = resp?.PaginationResult as Record<string, unknown> | undefined;
+  const totalEntries = Number(pagination?.TotalNumberOfEntries ?? items.length);
+  const totalPages = Number(pagination?.TotalNumberOfPages ?? 1);
 
   return NextResponse.json({
     ok: true,
     fetched: items.length,
     totalEntries,
-    pagesFetched: lastPageFetched,
+    pageNumber,
     totalPages,
-    truncated: lastPageFetched < totalPages,
+    hasMore: pageNumber < totalPages,
     durationMs: Date.now() - started,
     items,
     includeEnded,

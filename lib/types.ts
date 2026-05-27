@@ -33,9 +33,9 @@ export interface InventoryResult {
   ok: boolean;
   fetched: number;
   totalEntries?: number;
-  pagesFetched: number;
+  pageNumber: number;
   totalPages?: number;
-  truncated?: boolean;
+  hasMore?: boolean;
   durationMs: number;
   items?: InventoryItem[];
   includeEnded?: boolean;
@@ -43,7 +43,6 @@ export interface InventoryResult {
   errors?: EbayErrorSummary[];
   error?: string;
   missing?: string[];
-  stoppedOnPage?: number;
 }
 
 export interface ClearItemResult {

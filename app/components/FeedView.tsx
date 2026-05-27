@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRememberedItemId } from "./useRememberedItemId";
 import { useApiCall } from "./useApiCall";
-import type { ClearResult, InventoryResult } from "@/lib/types";
+import type { ClearResult, InventoryItem, InventoryResult } from "@/lib/types";
+
+const PAGE_SIZE = 10;
 
 export default function FeedView({ env }: { env: "sandbox" | "production" }) {
   const {
@@ -22,19 +24,35 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
   } = useApiCall<ClearResult>();
   const [rememberedItemId, setRememberedItemId] = useRememberedItemId();
   const [includeEnded, setIncludeEnded] = useState(false);
+  const [items, setItems] = useState<InventoryItem[]>([]);
 
-  const pullAll = useCallback(
+  const pullFirst = useCallback(
     async (opts?: { silent?: boolean }) => {
       if (!opts?.silent) resetClear();
-      await runPull("/api/inventory", { entriesPerPage: 100, includeEnded }, { silent: opts?.silent });
+      const r = await runPull(
+        "/api/inventory",
+        { pageNumber: 1, entriesPerPage: PAGE_SIZE, includeEnded },
+        { silent: opts?.silent },
+      );
+      if (r?.ok && r.items) setItems(r.items);
+      else if (!r?.ok) setItems([]);
     },
     [includeEnded, runPull, resetClear],
   );
 
-  // Auto-refresh when the user toggles include-ended after the first pull.
-  // The leading `pull !== null` guard avoids firing on initial mount.
+  const loadMore = useCallback(async () => {
+    if (!pull?.ok || !pull.hasMore) return;
+    const r = await runPull(
+      "/api/inventory",
+      { pageNumber: (pull.pageNumber ?? 1) + 1, entriesPerPage: PAGE_SIZE, includeEnded },
+      { silent: true },
+    );
+    if (r?.ok && r.items) setItems((prev) => [...prev, ...r.items!]);
+  }, [pull, includeEnded, runPull]);
+
+  // Refetch from page 1 when the include-ended toggle changes after a first pull.
   useEffect(() => {
-    if (pull !== null) pullAll({ silent: true });
+    if (pull !== null) pullFirst({ silent: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [includeEnded]);
 
@@ -48,6 +66,7 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
     if (typed !== challenge) return;
 
     resetPull();
+    setItems([]);
     await runClear("/api/inventory/clear", isProd ? { allowProduction: true } : {});
   }
 
@@ -69,11 +88,11 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
           </label>
           <button
             type="button"
-            onClick={() => pullAll()}
+            onClick={() => pullFirst()}
             disabled={pullLoading || clearLoading}
             className="rounded-md bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-neutral-700 disabled:opacity-60 dark:bg-neutral-100 dark:text-neutral-900"
           >
-            {pullLoading ? "Pulling…" : "Pull full inventory"}
+            {pullLoading && items.length === 0 ? "Pulling…" : "Pull inventory"}
           </button>
           <button
             type="button"
@@ -142,26 +161,20 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
             <>
               <div className="mb-2 flex flex-wrap gap-3 text-xs text-neutral-500">
                 <span>
-                  Fetched: <strong className="text-neutral-700 dark:text-neutral-200">{pull.fetched}</strong>
-                  {typeof pull.totalEntries === "number" && pull.totalEntries !== pull.fetched
-                    ? ` / ${pull.totalEntries}`
+                  Showing: <strong className="text-neutral-700 dark:text-neutral-200">{items.length}</strong>
+                  {typeof pull.totalEntries === "number" && pull.totalEntries > items.length
+                    ? ` of ${pull.totalEntries}`
                     : ""}
                 </span>
                 <span>·</span>
                 <span>
-                  Pages: {pull.pagesFetched}
-                  {pull.totalPages && pull.totalPages !== pull.pagesFetched ? ` of ${pull.totalPages}` : ""}
+                  Page {pull.pageNumber}
+                  {pull.totalPages ? ` of ${pull.totalPages}` : ""}
                 </span>
                 <span>·</span>
-                <span>{pull.durationMs}ms</span>
-                {pull.truncated && (
-                  <>
-                    <span>·</span>
-                    <span className="text-amber-600">truncated (raise maxPages on server)</span>
-                  </>
-                )}
+                <span>{pull.durationMs}ms (last page)</span>
               </div>
-              {pull.items && pull.items.length > 0 ? (
+              {items.length > 0 ? (
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-sm">
                     <thead className="text-xs uppercase text-neutral-500">
@@ -179,7 +192,7 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
                       </tr>
                     </thead>
                     <tbody>
-                      {pull.items.map((it) => {
+                      {items.map((it) => {
                         const isSelected = rememberedItemId === it.itemId;
                         return (
                           <tr
@@ -247,6 +260,18 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
                       })}
                     </tbody>
                   </table>
+                  {pull.hasMore && (
+                    <div className="mt-3 flex justify-center">
+                      <button
+                        type="button"
+                        onClick={loadMore}
+                        disabled={pullLoading || clearLoading}
+                        className="rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-100 disabled:opacity-60 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800"
+                      >
+                        {pullLoading ? "Loading…" : `Load ${PAGE_SIZE} more`}
+                      </button>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <p className="text-xs text-neutral-500">No items returned.</p>
@@ -256,7 +281,7 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
         </div>
       ) : (
         <p className="text-xs text-neutral-500">
-          Click &ldquo;Pull full inventory&rdquo; to fetch every active listing. Toggle &ldquo;include ended/sold&rdquo; to also surface recently-ended items.
+          Click &ldquo;Pull inventory&rdquo; to fetch the first {PAGE_SIZE} active listings. Use &ldquo;Load more&rdquo; to bring in additional pages.
         </p>
       )}
     </section>
