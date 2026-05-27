@@ -68,7 +68,23 @@ export async function POST(req: Request) {
       `<DetailLevel>ReturnAll</DetailLevel>` +
       `<GranularityLevel>Fine</GranularityLevel>` +
       `<Pagination><EntriesPerPage>${entriesPerPage}</EntriesPerPage><PageNumber>${page}</PageNumber></Pagination>`;
-    const result = await callTradingApi("GetSellerList", xml, cfg);
+    let result;
+    try {
+      result = await callTradingApi("GetSellerList", xml, cfg);
+    } catch (err) {
+      return NextResponse.json(
+        {
+          ok: false,
+          fetched: items.length,
+          pagesFetched: page - 1,
+          stoppedOnPage: page,
+          error: err instanceof Error ? err.message : String(err),
+          stack: err instanceof Error ? err.stack : undefined,
+          durationMs: Date.now() - started,
+        },
+        { status: 502 },
+      );
+    }
     lastPageFetched = page;
 
     if (!result.ok) {
