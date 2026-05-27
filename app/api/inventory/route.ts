@@ -6,6 +6,9 @@ import type { InventoryItem } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// A full pull of ~3k listings across 100-per-page costs ~30 sequential
+// Trading API round-trips and overruns Vercel's default 60s timeout.
+export const maxDuration = 300;
 
 interface RawItem {
   ItemID?: string | number;
