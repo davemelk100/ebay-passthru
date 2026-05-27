@@ -35,16 +35,19 @@ export interface EbayError {
 }
 
 export function readConfig(): EbayConfig {
-  const env = (process.env.EBAY_ENV ?? "sandbox") as EbayEnv;
+  // Trim every value — stray whitespace pasted into env-var UIs silently
+  // misroutes EBAY_ENV ("production " !== "production") to the sandbox host
+  // and invalidates Basic auth headers built from APP_ID/CERT_ID.
+  const v = (k: string, d = "") => (process.env[k] ?? d).trim();
   return {
-    env,
-    appId: process.env.EBAY_APP_ID ?? "",
-    devId: process.env.EBAY_DEV_ID ?? "",
-    certId: process.env.EBAY_CERT_ID ?? "",
-    authToken: process.env.EBAY_AUTH_TOKEN ?? "",
-    refreshToken: process.env.EBAY_REFRESH_TOKEN ?? "",
-    siteId: process.env.EBAY_SITE_ID ?? "0",
-    compatLevel: process.env.EBAY_COMPAT_LEVEL ?? "1193",
+    env: (v("EBAY_ENV", "sandbox") as EbayEnv),
+    appId: v("EBAY_APP_ID"),
+    devId: v("EBAY_DEV_ID"),
+    certId: v("EBAY_CERT_ID"),
+    authToken: v("EBAY_AUTH_TOKEN"),
+    refreshToken: v("EBAY_REFRESH_TOKEN"),
+    siteId: v("EBAY_SITE_ID", "0"),
+    compatLevel: v("EBAY_COMPAT_LEVEL", "1193"),
   };
 }
 
