@@ -69,13 +69,8 @@ export default function SellPanel({ env }: { env: "sandbox" | "production" }) {
 
   async function send() {
     const isMutating = method !== "GET";
-    const allowProduction = env === "production" && isMutating;
-    if (allowProduction) {
-      const ok = window.confirm(
-        `⚠️ You're on PRODUCTION.\n\n${method} ${path} may mutate real seller data.\nProceed?`,
-      );
-      if (!ok) return;
-    }
+    // Mutating Sell REST calls are hard-blocked on the server in production.
+    if (env === "production" && isMutating) return;
 
     let parsedBody: unknown = undefined;
     if (isMutating && body.trim().length > 0) {
@@ -91,7 +86,6 @@ export default function SellPanel({ env }: { env: "sandbox" | "production" }) {
       method,
       path,
       ...(parsedBody !== undefined ? { body: parsedBody } : {}),
-      ...(allowProduction ? { allowProduction: true } : {}),
     });
   }
 
@@ -165,14 +159,24 @@ export default function SellPanel({ env }: { env: "sandbox" | "production" }) {
       )}
 
       <div className="mt-2 flex items-center gap-2">
-        <button
-          type="button"
-          onClick={send}
-          disabled={loading}
-          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
-        >
-          {loading ? "Sending…" : `Send ${method}`}
-        </button>
+        {(() => {
+          const mutatingInProd = env === "production" && method !== "GET";
+          return (
+            <button
+              type="button"
+              onClick={send}
+              disabled={loading || mutatingInProd}
+              title={
+                mutatingInProd
+                  ? `${method} is disabled in production — mutating Sell REST calls are blocked.`
+                  : undefined
+              }
+              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+            >
+              {loading ? "Sending…" : mutatingInProd ? `${method} (disabled in prod)` : `Send ${method}`}
+            </button>
+          );
+        })()}
         {result && result.status !== undefined && (
           <span className="text-xs text-neutral-500">
             HTTP {result.status} · {result.durationMs}ms ·{" "}

@@ -3,11 +3,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRememberedItemId } from "./useRememberedItemId";
 import { useApiCall } from "./useApiCall";
-import type { ClearResult, InventoryItem, InventoryResult } from "@/lib/types";
+import type { InventoryItem, InventoryResult } from "@/lib/types";
 
 const PAGE_SIZE = 10;
 
-export default function FeedView({ env }: { env: "sandbox" | "production" }) {
+export default function FeedView(_props: { env: "sandbox" | "production" }) {
+  void _props;
   const {
     data: pull,
     error: pullError,
@@ -15,20 +16,12 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
     run: runPull,
     reset: resetPull,
   } = useApiCall<InventoryResult>();
-  const {
-    data: clear,
-    error: clearError,
-    loading: clearLoading,
-    run: runClear,
-    reset: resetClear,
-  } = useApiCall<ClearResult>();
   const [rememberedItemId, setRememberedItemId] = useRememberedItemId();
   const [includeEnded, setIncludeEnded] = useState(false);
   const [items, setItems] = useState<InventoryItem[]>([]);
 
   const pullFirst = useCallback(
     async (opts?: { silent?: boolean }) => {
-      if (!opts?.silent) resetClear();
       const r = await runPull(
         "/api/inventory",
         { pageNumber: 1, entriesPerPage: PAGE_SIZE, includeEnded },
@@ -37,7 +30,7 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
       if (r?.ok && r.items) setItems(r.items);
       else if (!r?.ok) setItems([]);
     },
-    [includeEnded, runPull, resetClear],
+    [includeEnded, runPull],
   );
 
   const loadMore = useCallback(async () => {
@@ -56,18 +49,9 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [includeEnded]);
 
-  async function clearAll() {
-    const isProd = env === "production";
-    const intro = isProd
-      ? "⚠️ PRODUCTION ⚠️\n\nThis will END EVERY ACTIVE LISTING on the real eBay seller account.\nThis cannot be undone."
-      : "This will end every active sandbox listing.";
-    const challenge = isProd ? "CLEAR PRODUCTION" : "CLEAR";
-    const typed = window.prompt(`${intro}\n\nType "${challenge}" to proceed:`);
-    if (typed !== challenge) return;
-
-    resetPull();
+  function clearView() {
     setItems([]);
-    await runClear("/api/inventory/clear", isProd ? { allowProduction: true } : {});
+    resetPull();
   }
 
   return (
@@ -81,7 +65,7 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
               type="checkbox"
               checked={includeEnded}
               onChange={(e) => setIncludeEnded(e.target.checked)}
-              disabled={pullLoading || clearLoading}
+              disabled={pullLoading}
               className="peer sr-only"
             />
             <span className="relative h-5 w-9 rounded-full bg-neutral-300 transition-colors after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:shadow after:transition-transform after:content-[''] peer-checked:bg-blue-600 peer-checked:after:translate-x-4 peer-disabled:opacity-50 dark:bg-neutral-700" />
@@ -89,67 +73,22 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
           <button
             type="button"
             onClick={() => pullFirst()}
-            disabled={pullLoading || clearLoading}
+            disabled={pullLoading}
             className="rounded-md bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-neutral-700 disabled:opacity-60 dark:bg-neutral-100 dark:text-neutral-900"
           >
             {pullLoading && items.length === 0 ? "Pulling…" : "Pull inventory"}
           </button>
           <button
             type="button"
-            onClick={clearAll}
-            disabled={pullLoading || clearLoading}
-            className="rounded-md border border-red-300 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100 disabled:opacity-60 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-300"
+            onClick={clearView}
+            disabled={pullLoading || (items.length === 0 && pull === null)}
+            title="Clears the on-screen table only — does not touch eBay."
+            className="rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-100 disabled:opacity-60 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800"
           >
-            {clearLoading ? "Clearing…" : env === "production" ? "Clear inventory (PROD)" : "Clear inventory"}
+            Clear view
           </button>
         </div>
       </header>
-
-      {(clear || clearError) && (
-        <div className="mb-3 rounded-md border border-neutral-200 bg-neutral-50 p-3 dark:border-neutral-800 dark:bg-neutral-950">
-          {clearError || clear?.error ? (
-            <p className="text-xs text-red-600">
-              {clearError ?? clear?.error}
-              {clear?.hint && <span className="block text-neutral-500">{clear.hint}</span>}
-              {clear?.missing && <span className="block">Missing: {clear.missing.join(", ")}</span>}
-            </p>
-          ) : clear ? (
-            <div className="text-xs">
-              <div className="mb-1 flex flex-wrap gap-3 text-neutral-500">
-                <span>
-                  Found: <strong className="text-neutral-700 dark:text-neutral-200">{clear.foundCount}</strong>
-                </span>
-                <span>·</span>
-                <span>
-                  Ended: <strong className="text-green-700 dark:text-green-400">{clear.endedCount}</strong>
-                </span>
-                {clear.failedCount ? (
-                  <>
-                    <span>·</span>
-                    <span>
-                      Failed: <strong className="text-red-700 dark:text-red-400">{clear.failedCount}</strong>
-                    </span>
-                  </>
-                ) : null}
-                <span>·</span>
-                <span>{clear.durationMs}ms</span>
-              </div>
-              {clear.results && clear.results.some((r) => !r.ended) && (
-                <ul className="mt-2 space-y-1">
-                  {clear.results
-                    .filter((r) => !r.ended)
-                    .map((r) => (
-                      <li key={r.itemId} className="font-mono text-[11px] text-red-600">
-                        {r.itemId} — failed{" "}
-                        {r.errors.map((e) => e.shortMessage).filter(Boolean).join("; ")}
-                      </li>
-                    ))}
-                </ul>
-              )}
-            </div>
-          ) : null}
-        </div>
-      )}
 
       {pull || pullError ? (
         <div className="mb-3">
@@ -265,7 +204,7 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
                       <button
                         type="button"
                         onClick={loadMore}
-                        disabled={pullLoading || clearLoading}
+                        disabled={pullLoading}
                         className="rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-100 disabled:opacity-60 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800"
                       >
                         {pullLoading ? "Loading…" : `Load ${PAGE_SIZE} more`}

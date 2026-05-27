@@ -7,21 +7,14 @@ import type { ClearItemResult } from "@/lib/types";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function POST(req: Request) {
-  const body = (await req.json().catch(() => ({}))) as {
-    allowProduction?: boolean;
-  };
-  const allowProduction = body.allowProduction === true;
-
+export async function POST() {
   const guard = requireEbayConfig({ okFlag: true });
   if (guard.response) return guard.response;
   const { cfg } = guard;
 
   const blocked = blockIfProduction(cfg, {
     blocked: true,
-    allowProduction,
-    error: "Clear inventory is blocked on production without explicit opt-in.",
-    hint: "Re-send with allowProduction:true — this ends every active listing on the seller account.",
+    error: "Clear inventory is permanently disabled on production.",
     okFlag: true,
   });
   if (blocked) return blocked;

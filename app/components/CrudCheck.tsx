@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { useApiCall } from "./useApiCall";
 
 interface StepReport {
@@ -24,18 +23,17 @@ interface Summary {
 }
 
 export default function CrudCheck() {
-  const [allowProd, setAllowProd] = useState(false);
   const { data: summary, error, loading, run: runApi } = useApiCall<Summary>();
 
   async function run() {
     if (
       !window.confirm(
-        "This will Create → Read → Update → Delete a test listing via Trading API. Continue?",
+        "This will Create → Read → Update → Delete a test listing via Trading API. Sandbox only — production is blocked. Continue?",
       )
     ) {
       return;
     }
-    await runApi("/api/crud-check", { allowProduction: allowProd });
+    await runApi("/api/crud-check");
   }
 
   return (
@@ -44,7 +42,7 @@ export default function CrudCheck() {
         <h2 className="text-lg font-semibold">CRUD check</h2>
         <p className="text-xs text-neutral-500">
           Runs <code>AddItem</code> → <code>GetItem</code> → <code>ReviseItem</code> →{" "}
-          <code>EndItem</code> and reports pass/fail per step. Use sandbox.
+          <code>EndItem</code> and reports pass/fail per step. Sandbox only — the server hard-blocks this in production.
         </p>
       </header>
 
@@ -57,14 +55,6 @@ export default function CrudCheck() {
         >
           {loading ? "Running…" : "Run CRUD check"}
         </button>
-        <label className="flex items-center gap-1 text-xs text-neutral-500">
-          <input
-            type="checkbox"
-            checked={allowProd}
-            onChange={(e) => setAllowProd(e.target.checked)}
-          />
-          Allow production (creates a real listing!)
-        </label>
       </div>
 
       {(error || summary?.error) && (

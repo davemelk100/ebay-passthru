@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 const MUTATING_METHODS: ReadonlySet<SellMethod> = new Set(["POST", "PUT", "DELETE", "PATCH"]);
 
 export async function POST(req: Request) {
-  let body: { method?: string; path?: string; body?: unknown; allowProduction?: boolean };
+  let body: { method?: string; path?: string; body?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -17,7 +17,6 @@ export async function POST(req: Request) {
 
   const method = String(body.method ?? "GET").toUpperCase() as SellMethod;
   const path = (body.path ?? "").trim();
-  const allowProduction = body.allowProduction === true;
 
   if (!path) {
     return NextResponse.json({ error: "Missing path." }, { status: 400 });
@@ -41,9 +40,7 @@ export async function POST(req: Request) {
 
   const blocked = blockIfProduction(cfg, {
     blocked: MUTATING_METHODS.has(method),
-    allowProduction,
-    error: `${method} ${path} is blocked in production without an explicit opt-in.`,
-    hint: "Re-send with allowProduction:true to bypass — this call mutates real seller data.",
+    error: `${method} ${path} is permanently disabled in production — mutating Sell REST calls are blocked.`,
     details: { method, path, env: cfg.env },
   });
   if (blocked) return blocked;

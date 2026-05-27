@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
-  let body: { callName?: string; xml?: string; allowProduction?: boolean };
+  let body: { callName?: string; xml?: string };
   try {
     body = await req.json();
   } catch {
@@ -16,7 +16,6 @@ export async function POST(req: Request) {
 
   const callName = (body.callName ?? "").trim();
   const xml = body.xml ?? "";
-  const allowProduction = body.allowProduction === true;
 
   if (!callName) {
     return NextResponse.json({ error: "Missing callName." }, { status: 400 });
@@ -28,9 +27,7 @@ export async function POST(req: Request) {
 
   const blocked = blockIfProduction(cfg, {
     blocked: DESTRUCTIVE_CALLS.has(callName),
-    allowProduction,
-    error: `${callName} is blocked in production without an explicit opt-in.`,
-    hint: "Re-send with allowProduction:true in the body to bypass — this call mutates real seller data.",
+    error: `${callName} is blocked in production — destructive Trading calls are disabled.`,
     details: { callName, env: cfg.env },
   });
   if (blocked) return blocked;

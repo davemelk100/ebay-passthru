@@ -18,25 +18,14 @@ interface StepReport {
   note?: string;
 }
 
-export async function POST(req: Request) {
+export async function POST() {
   const guard = requireEbayConfig();
   if (guard.response) return guard.response;
   const { cfg } = guard;
 
-  // Safety: never run CRUD against production by default — the Create step would publish a real listing.
-  let allowProduction = false;
-  try {
-    const body = (await req.json()) as { allowProduction?: boolean };
-    allowProduction = body.allowProduction === true;
-  } catch {
-    // no body — fine
-  }
-
   const blocked = blockIfProduction(cfg, {
     blocked: true,
-    allowProduction,
-    error:
-      "CRUD check is blocked in production unless allowProduction:true is passed — AddItem would publish a real listing.",
+    error: "CRUD check is permanently disabled in production — its Create step would publish a real listing.",
   });
   if (blocked) return blocked;
 

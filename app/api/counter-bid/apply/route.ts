@@ -29,9 +29,7 @@ function escapeXml(s: string): string {
 export async function POST(req: Request) {
   const body = (await req.json().catch(() => ({}))) as {
     decisions?: DecisionEnvelope[];
-    allowProduction?: boolean;
   };
-  const allowProduction = body.allowProduction === true;
 
   if (!Array.isArray(body.decisions) || body.decisions.length === 0) {
     return NextResponse.json({ error: "Provide a non-empty `decisions` array." }, { status: 400 });
@@ -43,9 +41,7 @@ export async function POST(req: Request) {
 
   const blocked = blockIfProduction(cfg, {
     blocked: true,
-    allowProduction,
-    error: "Counter-bid apply is blocked on production without explicit opt-in.",
-    hint: "Re-send with allowProduction:true — this responds to real buyer offers.",
+    error: "Counter-bid apply is permanently disabled on production.",
     okFlag: true,
   });
   if (blocked) return blocked;

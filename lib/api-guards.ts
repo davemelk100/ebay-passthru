@@ -32,18 +32,19 @@ export function requireEbayConfig(opts: ConfigGuardOptions = {}): ConfigGuardRes
 export interface ProductionBlockOptions {
   // True when the specific call being made is destructive (so it needs the guard).
   blocked: boolean;
-  allowProduction: boolean;
   error: string;
   hint?: string;
   details?: Record<string, unknown>;
   okFlag?: boolean;
 }
 
+// Hard-blocks destructive calls in production. There is no opt-in escape
+// hatch — clients cannot bypass this by passing flags. Sandbox is unaffected.
 export function blockIfProduction(
   cfg: EbayConfig,
   opts: ProductionBlockOptions,
 ): NextResponse | null {
-  if (cfg.env !== "production" || !opts.blocked || opts.allowProduction) return null;
+  if (cfg.env !== "production" || !opts.blocked) return null;
   const body: Record<string, unknown> = { error: opts.error };
   if (opts.okFlag) body.ok = false;
   if (opts.hint) body.hint = opts.hint;

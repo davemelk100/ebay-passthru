@@ -1,6 +1,6 @@
 import CallPanel from "./components/CallPanel";
-import CounterBidPanel from "./components/CounterBidPanel";
-import CrudCheck from "./components/CrudCheck";
+// import CounterBidPanel from "./components/CounterBidPanel"; // Disabled — would mutate buyer offers.
+// import CrudCheck from "./components/CrudCheck"; // Disabled — runs AddItem / EndItem.
 import FeedView from "./components/FeedView";
 import SellPanel from "./components/SellPanel";
 import { configIssues, readConfig } from "@/lib/ebay";
@@ -42,9 +42,9 @@ export default function Home() {
       <div className="space-y-6">
         <FeedView env={cfg.env} />
         <CallPanel env={cfg.env} />
-        <CounterBidPanel env={cfg.env} />
+        {/* <CounterBidPanel env={cfg.env} /> */}
         <SellPanel env={cfg.env} />
-        <CrudCheck />
+        {/* <CrudCheck /> */}
       </div>
 
       <footer className="mt-10 text-xs text-neutral-500">

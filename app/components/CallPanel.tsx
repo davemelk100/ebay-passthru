@@ -59,21 +59,11 @@ export default function CallPanel({ env }: { env: "sandbox" | "production" }) {
   }
 
   async function send() {
-    const isDestructive = DESTRUCTIVE_CALLS.has(callName);
-    const allowProduction = env === "production" && isDestructive;
+    // Destructive calls are hard-blocked on the server in production, and the
+    // pill in the UI is already disabled — no client-side bypass is possible.
+    if (env === "production" && DESTRUCTIVE_CALLS.has(callName)) return;
 
-    if (allowProduction) {
-      const ok = window.confirm(
-        `⚠️ You're on PRODUCTION.\n\n${callName} mutates real seller data on eBay.\nProceed?`,
-      );
-      if (!ok) return;
-    }
-
-    const data = await run("/api/ebay", {
-      callName,
-      xml,
-      ...(allowProduction ? { allowProduction: true } : {}),
-    });
+    const data = await run("/api/ebay", { callName, xml });
     if (!data) return;
 
     if (data.ok && callName === "AddItem") {
