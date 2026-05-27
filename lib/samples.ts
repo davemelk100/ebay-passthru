@@ -60,46 +60,4 @@ export const SAMPLE_BODIES: Record<string, string> = {
   GetItem: `<ItemID>REPLACE_WITH_ITEM_ID</ItemID>
 <DetailLevel>ReturnAll</DetailLevel>
 <IncludeItemSpecifics>true</IncludeItemSpecifics>`,
-  AddItem: `<Item>
-  <Title>[SANDBOX] Passthru test listing — please ignore</Title>
-  <Description>Sandbox automation test listing. Not a real product.</Description>
-  <PrimaryCategory><CategoryID>9355</CategoryID></PrimaryCategory>
-  <StartPrice currencyID="USD">9.99</StartPrice>
-  <ConditionID>1000</ConditionID>
-  <Country>US</Country>
-  <Currency>USD</Currency>
-  <DispatchTimeMax>3</DispatchTimeMax>
-  <ListingDuration>GTC</ListingDuration>
-  <ListingType>FixedPriceItem</ListingType>
-  <PictureDetails><PictureURL>https://picsum.photos/600/400</PictureURL></PictureDetails>
-  <PostalCode>95125</PostalCode>
-  <Quantity>1</Quantity>
-  <ItemSpecifics>
-    <NameValueList><Name>Brand</Name><Value>Unbranded</Value></NameValueList>
-    <NameValueList><Name>Model</Name><Value>Test Model</Value></NameValueList>
-    <NameValueList><Name>Color</Name><Value>Black</Value></NameValueList>
-    <NameValueList><Name>Storage Capacity</Name><Value>64 GB</Value></NameValueList>
-  </ItemSpecifics>
-  <ReturnPolicy>
-    <ReturnsAcceptedOption>ReturnsAccepted</ReturnsAcceptedOption>
-    <RefundOption>MoneyBack</RefundOption>
-    <ReturnsWithinOption>Days_30</ReturnsWithinOption>
-    <ShippingCostPaidByOption>Buyer</ShippingCostPaidByOption>
-  </ReturnPolicy>
-  <ShippingDetails>
-    <ShippingType>Flat</ShippingType>
-    <ShippingServiceOptions>
-      <ShippingServicePriority>1</ShippingServicePriority>
-      <ShippingService>USPSPriority</ShippingService>
-      <ShippingServiceCost currencyID="USD">5.00</ShippingServiceCost>
-    </ShippingServiceOptions>
-  </ShippingDetails>
-  <Site>US</Site>
-</Item>`,
-  ReviseItem: `<Item>
-  <ItemID>REPLACE_WITH_ITEM_ID</ItemID>
-  <Title>Passthru test listing (revised)</Title>
-</Item>`,
-  EndItem: `<ItemID>REPLACE_WITH_ITEM_ID</ItemID>
-<EndingReason>NotAvailable</EndingReason>`,
 };

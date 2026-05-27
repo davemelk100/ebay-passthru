@@ -13,18 +13,6 @@ function substituteItemId(xml: string, itemId: string | null): string {
   return xml.split(PLACEHOLDER).join(itemId);
 }
 
-function extractItemIdFromResponse(parsed: unknown): string | null {
-  const root = parsed as Record<string, unknown> | null;
-  if (!root) return null;
-  for (const key of Object.keys(root)) {
-    if (!key.endsWith("Response")) continue;
-    const resp = root[key] as Record<string, unknown> | undefined;
-    const id = resp?.ItemID;
-    if (id !== undefined && id !== null && String(id).length > 0) return String(id);
-  }
-  return null;
-}
-
 interface ApiResult {
   ok: boolean;
   status: number;
@@ -47,31 +35,16 @@ export default function CallPanel({ env }: { env: "sandbox" | "production" }) {
 
   function pickCall(name: string) {
     setCallName(name);
-    let body = substituteItemId(SAMPLE_BODIES[name] ?? "", rememberedItemId);
-    if (name === "AddItem") {
-      // Inject a unique stamp so each click produces a different title and
-      // avoids eBay's "Duplicate Listing" policy (error 21919067).
-      const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-      body = body.replace("[SANDBOX]", `[SANDBOX ${stamp}]`);
-    }
-    setXml(body);
+    setXml(substituteItemId(SAMPLE_BODIES[name] ?? "", rememberedItemId));
     reset();
   }
 
   async function send() {
-    // Destructive calls are hard-blocked on the server in production, and the
-    // pill in the UI is already disabled — no client-side bypass is possible.
+    // Belt-and-suspenders: the server hard-blocks destructive calls in prod
+    // and rejects anything outside the read-only allowlist, but bail early
+    // here too if something snuck back into the sample list.
     if (env === "production" && DESTRUCTIVE_CALLS.has(callName)) return;
-
-    const data = await run("/api/ebay", { callName, xml });
-    if (!data) return;
-
-    if (data.ok && callName === "AddItem") {
-      const newId = extractItemIdFromResponse(data.parsed);
-      if (newId) setRememberedItemId(newId);
-    } else if (data.ok && callName === "EndItem" && rememberedItemId) {
-      setRememberedItemId(null);
-    }
+    await run("/api/ebay", { callName, xml });
   }
 
   return (
