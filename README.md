@@ -1,6 +1,6 @@
 # ebay-passthru
 
-A Next.js + TypeScript app that acts as a server-side **passthrough to the eBay Trading API** (legacy XML), with a browser UI for sending calls and inspecting responses. Auth is OAuth user tokens with auto-refresh; credentials never leave the server.
+A Next.js + TypeScript app that acts as a server-side **passthrough to the eBay Trading API** (legacy XML) **and the Sell REST APIs** (Account / Fulfillment / Inventory), with a browser UI for sending calls and inspecting responses. Also ships a **Best Offer counter-bid engine** that evaluates incoming offers against a JSON rule file. Auth is OAuth user tokens with auto-refresh; credentials never leave the server.
 
 ## How it works (architecture)
 
@@ -152,15 +152,22 @@ Open http://localhost:3000 (or whatever port Next.js picks if 3000 is taken).
 | `POST` | `/api/inventory` | `{ entriesPerPage?, daysAhead?, daysBack?, includeEnded?: boolean }` | Paginates `GetSellerList` over a forward `EndTime` window (default 119d forward). Returns a normalized item list — `{ itemId, title, sku, quantity, quantitySold, price, currency, listingType, listingStatus, viewItemUrl, startTime, endTime, primaryCategoryId, primaryCategoryName, pictureUrls }`. With `includeEnded: true`, the window splits backward (default 30d back / 89d ahead) and ended/sold items are included. |
 | `POST` | `/api/inventory/clear` | `{ allowProduction?: boolean }` | Enumerates every active listing via `GetMyeBaySelling` pagination, then calls `EndItem` on each. Returns `{ foundCount, endedCount, failedCount, results, durationMs }`. Production-gated. |
 | `POST` | `/api/crud-check` | `{ allowProduction?: boolean }` | Per-step report of an `AddItem` → `GetItem` → `ReviseItem` → `EndItem` round-trip. Production-gated. |
+| `POST` | `/api/sell` | `{ method, path, body?, allowProduction?: boolean }` | Generic **Sell REST** passthrough. `method` is `GET`/`POST`/`PUT`/`DELETE`/`PATCH`; `path` is a Sell REST path like `/sell/account/v1/fulfillment_policy?marketplace_id=EBAY_US`. Mutating methods on production are 412'd unless `allowProduction: true`. |
+| `POST` | `/api/counter-bid/preview` | `{ itemId?, comps?: number[], offers?: OfferContext[] }` | Pulls live Best Offers for `itemId` via `GetBestOffers` + `GetItem` (with grade extraction from item specifics), evaluates each against `lib/counter-bid-rules.json`, and returns per-offer `Decision { action, counterPrice?, counterQuantity?, ruleName, reason }`. Pass `offers` directly to dry-run the engine without hitting eBay. |
+| `POST` | `/api/counter-bid/apply` | `{ decisions: DecisionEnvelope[], allowProduction?: boolean }` | Applies reviewed decisions by calling `RespondToBestOffer` (`Accept` / `Decline` / `Counter`) per offer. Production-gated. |
 
 The `xml` field is the **inner** body — the server wraps it in `<CallNameRequest>`. If you pass a full envelope (e.g., `<GetItemRequest>…</GetItemRequest>`), it's used as-is.
 
+Sell REST calls go through `lib/ebay-sell.ts` using the same OAuth access token as the Trading passthrough (it's an IAF/Bearer token good for both). The endpoint host is `api.sandbox.ebay.com` or `api.ebay.com` depending on `EBAY_ENV`.
+
 ## UI
 
-The page (`app/page.tsx`) renders three panels:
+The page (`app/page.tsx`) renders five panels:
 
 - **Inventory (GetSellerList)** — `FeedView.tsx`. "Pull full inventory" hits `/api/inventory` and renders the normalized item table. Each row has a **Use** button that stamps the ItemID into shared state so the call panel picks it up. A pill **toggle** ("include ended/sold") flips the request; after the first pull, toggling auto-refreshes the table without a re-click. The red **Clear inventory** button enumerates and ends every active listing — requires a typed challenge string (`CLEAR` on sandbox, `CLEAR PRODUCTION` on prod) before submitting.
 - **Trading API passthrough** — `CallPanel.tsx`. One pill button per entry in `lib/samples.ts`. On `EBAY_ENV=production`, destructive pills (Add/Revise/End variants) render disabled with a styled hover tooltip explaining why. Sending in production also triggers a `window.confirm` opt-in. `REPLACE_WITH_ITEM_ID` in samples is auto-substituted with the shared "last selected" ItemID — populated either by a successful `AddItem` here or by clicking **Use** in the inventory table. State sync between the two panels goes through `useRememberedItemId` (localStorage + window CustomEvent).
+- **Counter-bid** — `CounterBidPanel.tsx` (+ `counter-bid/OfferTable.tsx`, `counter-bid/ApplyResult.tsx`). Two tabs: **Live mode** pulls Best Offers for a given ItemID via `/api/counter-bid/preview` and shows the rule-engine verdict per offer (`accept` / `decline` / `counter`); **Synthetic mode** lets you stub offers in JSON to dry-run rules without live data. Apply step posts the accepted decisions to `/api/counter-bid/apply`, which `RespondToBestOffer`s each one. Rules and grade thresholds live in `lib/counter-bid-rules.json`; the engine itself is `lib/counter-bid.ts`. Samples tagged "biz-policy-only" hint when a category requires business policies (won't work on a fresh sandbox seller without them).
+- **Sell REST passthrough** — `SellPanel.tsx`. Generic UI for `/sell/...` REST endpoints with a method picker (`GET`/`POST`/`PUT`/`DELETE`/`PATCH`), path field, and optional JSON body. Ships sample paths (fulfillment policies, account programs, recent orders). Same production opt-in guardrails as the Trading panel — mutating methods are blocked on prod without `allowProduction: true`.
 - **CRUD check** — `CrudCheck.tsx`. Runs the full `AddItem → GetItem → ReviseItem → EndItem` pipeline against the configured env, with the same production guardrail.
 
 The samples in `lib/samples.ts` are seed bodies you can edit per call. Add a new sample by adding a new key — the UI picks it up automatically. Add a call name to `DESTRUCTIVE_CALLS` in the same file to gate it the same way as Add/Revise/End.
@@ -182,13 +189,28 @@ The samples in `lib/samples.ts` are seed bodies you can edit per call. Add a new
 | File | Purpose |
 | --- | --- |
 | `lib/ebay.ts` | Config loader, OAuth refresh, XML envelope builder, curl subprocess wrapper, response parser |
+| `lib/ebay-sell.ts` | Sell REST client — sends JSON requests with the same OAuth Bearer token |
+| `lib/ebay-xml.ts` | Shared XML helpers (`asArray`, `extractArray`, `getPath`, `getResponse`) used by routes that parse Trading responses |
+| `lib/curl.ts` | `curl` subprocess wrapper used by both Trading and Sell REST paths |
+| `lib/api-guards.ts` | `requireEbayConfig` (412 on missing credentials) and `blockIfProduction` (412 on prod mutations without opt-in) |
 | `lib/samples.ts` | Inner-XML seed bodies per call name and the `DESTRUCTIVE_CALLS` set used by both server-side gating and UI disabling |
-| `app/api/ebay/route.ts` | Passthrough endpoint; enforces the production opt-in for destructive calls |
+| `lib/counter-bid.ts` | Rule loader and offer-evaluation engine — turns an `OfferContext` into a `Decision` |
+| `lib/counter-bid-rules.json` | The rule file the engine reads — edit this to change accept / decline / counter behavior |
+| `lib/types.ts` | Shared types crossing the API boundary (`InventoryItem`, `OfferContext`, `ApplyDecisionResult`, …) |
+| `app/api/ebay/route.ts` | Trading XML passthrough endpoint; enforces the production opt-in for destructive calls |
+| `app/api/sell/route.ts` | Sell REST passthrough endpoint; method/path-driven |
 | `app/api/inventory/route.ts` | Paginated `GetSellerList` reader with active-only / include-ended modes |
 | `app/api/inventory/clear/route.ts` | Bulk-end every active listing; production-gated |
 | `app/api/crud-check/route.ts` | 4-step CRUD verification pipeline |
+| `app/api/counter-bid/preview/route.ts` | Pulls Best Offers + item context, runs the rule engine, returns per-offer decisions |
+| `app/api/counter-bid/apply/route.ts` | Applies reviewed decisions via `RespondToBestOffer`; production-gated |
 | `app/components/FeedView.tsx` | Inventory table + Pull / Clear / include-ended toggle |
 | `app/components/CallPanel.tsx` | Single-call passthrough UI with destructive-pill disabling on prod |
+| `app/components/SellPanel.tsx` | Sell REST passthrough UI (method + path + JSON body) |
+| `app/components/CounterBidPanel.tsx` | Live + synthetic counter-bid UI |
+| `app/components/counter-bid/OfferTable.tsx` | Rendered table of offers + decisions inside the counter-bid panel |
+| `app/components/counter-bid/ApplyResult.tsx` | Per-offer apply outcomes after submitting decisions |
 | `app/components/CrudCheck.tsx` | CRUD verification UI |
+| `app/components/useApiCall.ts` | Shared hook for `loading` / `error` / `result` state around the panels' fetch calls |
 | `app/components/useRememberedItemId.ts` | Shared hook (localStorage + window CustomEvent) that links FeedView's "Use" button to CallPanel's placeholder substitution |
 | `scripts/ebay-oauth.mjs` | One-time OAuth Authorization Code helper (writes tokens to `.env.local`) |
