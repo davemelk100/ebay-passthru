@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { blockIfProduction, requireEbayConfig } from "@/lib/api-guards";
 import { callSellApi, type SellMethod } from "@/lib/ebay-sell";
+import { PRODUCTION_BLOCKED_SELL_PREFIXES } from "@/lib/samples";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -37,6 +38,24 @@ export async function POST(req: Request) {
   const guard = requireEbayConfig();
   if (guard.response) return guard.response;
   const { cfg } = guard;
+
+  // In production, block sensitive-data paths regardless of method. Order
+  // endpoints leak buyer name + shipping address + payment summary; finances
+  // and identity also expose private data.
+  if (cfg.env === "production") {
+    const normalized = "/" + path.toLowerCase().replace(/^\/+/, "").split("?")[0];
+    if (PRODUCTION_BLOCKED_SELL_PREFIXES.some((p) => normalized.startsWith(p))) {
+      return NextResponse.json(
+        {
+          error: `${path} is blocked in production — exposes PII or financial data.`,
+          method,
+          path,
+          env: cfg.env,
+        },
+        { status: 403 },
+      );
+    }
+  }
 
   const blocked = blockIfProduction(cfg, {
     blocked: MUTATING_METHODS.has(method),

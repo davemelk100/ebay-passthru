@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { callTradingApi, configIssues, readConfig } from "@/lib/ebay";
 import { blockIfProduction, requireEbayConfig } from "@/lib/api-guards";
-import { DESTRUCTIVE_CALLS } from "@/lib/samples";
+import { DESTRUCTIVE_CALLS, PRODUCTION_ALLOWED_CALLS } from "@/lib/samples";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,6 +24,22 @@ export async function POST(req: Request) {
   const guard = requireEbayConfig({ hint: true });
   if (guard.response) return guard.response;
   const { cfg } = guard;
+
+  // Defense in depth: in production, accept only the read-only allowlist. This
+  // rejects every Trading call we haven't explicitly vetted — including ones
+  // that are destructive but happen to be missing from DESTRUCTIVE_CALLS, and
+  // ones that read sensitive data (GetOrders/GetMyMessages/GetAccount/etc.).
+  if (cfg.env === "production" && !PRODUCTION_ALLOWED_CALLS.has(callName)) {
+    return NextResponse.json(
+      {
+        error: `${callName} is not permitted in production. Only read-only calls are allowed.`,
+        allowed: Array.from(PRODUCTION_ALLOWED_CALLS).sort(),
+        callName,
+        env: cfg.env,
+      },
+      { status: 403 },
+    );
+  }
 
   const blocked = blockIfProduction(cfg, {
     blocked: DESTRUCTIVE_CALLS.has(callName),

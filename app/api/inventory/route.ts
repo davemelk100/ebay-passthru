@@ -71,7 +71,6 @@ export async function POST(req: Request) {
         fetched: 0,
         pageNumber,
         error: err instanceof Error ? err.message : String(err),
-        stack: err instanceof Error ? err.stack : undefined,
         durationMs: Date.now() - started,
       },
       { status: 502 },

@@ -1,9 +1,9 @@
 // Sample inner-XML bodies for common Trading API calls.
 // Kept in its own module so client components can import it without pulling in server-only code.
 
-// Trading calls that mutate live data — blocked in production unless `allowProduction: true`
-// is passed in the request body. Mirror this set on the server and the client so the UI can
-// warn before sending.
+// Trading calls that mutate live data — server hard-blocks these in production.
+// The UI also disables their pills. Mirrored here so the client can render the
+// visual state without importing server-only modules.
 export const DESTRUCTIVE_CALLS = new Set<string>([
   "AddItem",
   "AddItems",
@@ -18,6 +18,27 @@ export const DESTRUCTIVE_CALLS = new Set<string>([
   "EndFixedPriceItem",
   "RespondToBestOffer",
 ]);
+
+// Allowlist of Trading calls accepted by /api/ebay in production. Anything not
+// in this set is rejected, so adding a call like LeaveFeedback, IssueRefund,
+// AddMemberMessage*, ReviseInventoryStatus, etc. cannot be invoked via the
+// public route. Sandbox still accepts any callName.
+export const PRODUCTION_ALLOWED_CALLS = new Set<string>([
+  "GetUser",
+  "GetItem",
+  "GetSellerList",
+  "GetMyeBaySelling",
+  "GetBestOffers",
+]);
+
+// Path prefixes for /api/sell rejected in production. These leak buyer PII
+// (orders include name + shipping address + payment summary), financial data,
+// or your seller identity. GET on these is blocked too, not just writes.
+export const PRODUCTION_BLOCKED_SELL_PREFIXES: readonly string[] = [
+  "/sell/fulfillment/",
+  "/sell/finances/",
+  "/commerce/identity/",
+];
 
 export const SAMPLE_BODIES: Record<string, string> = {
   GetUser: "",

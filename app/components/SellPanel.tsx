@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useApiCall } from "./useApiCall";
+import { PRODUCTION_BLOCKED_SELL_PREFIXES } from "@/lib/samples";
 
 type Method = "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
 
@@ -100,20 +101,34 @@ export default function SellPanel({ env }: { env: "sandbox" | "production" }) {
       </header>
 
       <div className="mb-3 flex flex-wrap gap-2">
-        {SAMPLES.map((s) => (
-          <button
-            key={s.label}
-            type="button"
-            onClick={() => pickSample(s)}
-            className={`rounded-full border px-3 py-1 text-xs ${
-              activeSample === s.label
-                ? "border-blue-600 bg-blue-600 text-white"
-                : "border-neutral-300 bg-neutral-50 text-neutral-700 hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"
-            }`}
-          >
-            {s.label}
-          </button>
-        ))}
+        {SAMPLES.map((s) => {
+          const lowered = s.path.toLowerCase();
+          const blockedInProd =
+            env === "production" &&
+            PRODUCTION_BLOCKED_SELL_PREFIXES.some((p) => lowered.startsWith(p));
+          return (
+            <button
+              key={s.label}
+              type="button"
+              onClick={() => pickSample(s)}
+              disabled={blockedInProd}
+              title={
+                blockedInProd
+                  ? `${s.label} is disabled in production — leaks PII or financial data.`
+                  : undefined
+              }
+              className={`rounded-full border px-3 py-1 text-xs ${
+                blockedInProd
+                  ? "cursor-not-allowed border-neutral-200 bg-neutral-50 text-neutral-400 line-through dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-600"
+                  : activeSample === s.label
+                    ? "border-blue-600 bg-blue-600 text-white"
+                    : "border-neutral-300 bg-neutral-50 text-neutral-700 hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"
+              }`}
+            >
+              {s.label}
+            </button>
+          );
+        })}
       </div>
 
       {sample?.hint && (
