@@ -18,7 +18,17 @@ export default function Home() {
   return (
     <main className="mx-auto max-w-6xl px-6 py-10">
       <header className="mb-8">
-        <h1 className="text-3xl font-bold">eBay Passthru</h1>
+        <div className="flex items-center justify-between gap-4">
+          <h1 className="text-3xl font-bold">eBay Passthru</h1>
+          <a
+            href="https://github.com/davemelk100/ebay-passthru"
+            target="_blank"
+            rel="noreferrer"
+            className="text-sm text-neutral-500 hover:text-neutral-700 hover:underline dark:hover:text-neutral-200"
+          >
+            github.com/davemelk100/ebay-passthru
+          </a>
+        </div>
         <p className="text-neutral-500">
           Inspect an eBay Trading API feed and verify CRUD operations end-to-end.
         </p>
