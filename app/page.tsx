@@ -34,9 +34,6 @@ export default function Home() {
             </span>
           </div>
         </div>
-        <p className="text-neutral-500">
-          Inspect an eBay Trading API feed and verify CRUD operations end-to-end.
-        </p>
         <div className="mt-2 inline-flex flex-wrap items-center gap-2 rounded-full border border-neutral-200 bg-white px-3 py-1 text-xs dark:border-neutral-800 dark:bg-neutral-900">
           <span>
             env: <strong>{cfg.env}</strong>
