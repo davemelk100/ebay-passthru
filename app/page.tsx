@@ -25,12 +25,12 @@ export default function Home() {
               href="https://github.com/davemelk100/ebay-passthru"
               target="_blank"
               rel="noreferrer"
-              className="text-sm text-neutral-500 hover:text-neutral-700 hover:underline dark:hover:text-neutral-200"
+              className="font-mono text-sm text-neutral-500 hover:text-neutral-700 hover:underline dark:hover:text-neutral-200"
             >
               github.com/davemelk100/ebay-passthru
             </a>
-            <span className="mt-1 text-xs text-neutral-500">
-              Trading API endpoint: <code>{endpoint}</code>
+            <span className="mt-1 font-mono text-xs text-neutral-500">
+              Trading API endpoint: {endpoint}
             </span>
           </div>
         </div>
