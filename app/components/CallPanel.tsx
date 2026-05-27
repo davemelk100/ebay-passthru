@@ -48,11 +48,15 @@ export default function CallPanel({ env }: { env: "sandbox" | "production" }) {
   }
 
   return (
-    <section className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900">
-      <header className="mb-3 flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Trading API passthrough</h2>
+    <details className="group rounded-lg border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
+      <summary className="flex cursor-pointer list-none items-center justify-between p-4 [&::-webkit-details-marker]:hidden">
+        <span className="flex items-center gap-2">
+          <span className="text-xs text-neutral-400 transition-transform group-open:rotate-90">▸</span>
+          <h2 className="text-lg font-semibold">Trading API passthrough</h2>
+        </span>
         <span className="text-xs text-neutral-500">XML in → XML out</span>
-      </header>
+      </summary>
+      <div className="border-t border-neutral-200 p-4 dark:border-neutral-800">
 
       <div className="mb-3 flex flex-wrap gap-2">
         {CALLS.map((c) => {
@@ -183,6 +187,7 @@ export default function CallPanel({ env }: { env: "sandbox" | "production" }) {
           )}
         </div>
       )}
-    </section>
+      </div>
+    </details>
   );
 }
