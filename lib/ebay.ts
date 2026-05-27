@@ -35,12 +35,13 @@ export interface EbayError {
 }
 
 export function readConfig(): EbayConfig {
-  // Trim every value — stray whitespace pasted into env-var UIs silently
-  // misroutes EBAY_ENV ("production " !== "production") to the sandbox host
-  // and invalidates Basic auth headers built from APP_ID/CERT_ID.
+  // Trim every value — stray whitespace or casing variants pasted into
+  // env-var UIs silently misroute EBAY_ENV ("Production" / "production "
+  // !== "production") to the sandbox host and invalidate Basic auth headers
+  // built from APP_ID/CERT_ID.
   const v = (k: string, d = "") => (process.env[k] ?? d).trim();
   return {
-    env: (v("EBAY_ENV", "sandbox") as EbayEnv),
+    env: (v("EBAY_ENV", "sandbox").toLowerCase() as EbayEnv),
     appId: v("EBAY_APP_ID"),
     devId: v("EBAY_DEV_ID"),
     certId: v("EBAY_CERT_ID"),
