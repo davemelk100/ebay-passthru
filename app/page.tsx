@@ -14,17 +14,7 @@ export default function Home() {
   return (
     <main className="mx-auto max-w-6xl px-6 py-10">
       <header className="mb-8">
-        <div className="flex items-center justify-between gap-4">
-          <h1 className="text-3xl font-bold">eBay Passthru</h1>
-          <a
-            href="https://github.com/davemelk100/ebay-passthru"
-            target="_blank"
-            rel="noreferrer"
-            className="font-mono text-xs text-neutral-500 hover:text-neutral-700 hover:underline dark:hover:text-neutral-200"
-          >
-            github.com/davemelk100/ebay-passthru
-          </a>
-        </div>
+        <h1 className="text-3xl font-bold">eBay Passthru</h1>
         <div className="mt-2 inline-flex flex-wrap items-center gap-2 rounded-full border border-neutral-200 bg-white px-3 py-1 text-xs dark:border-neutral-800 dark:bg-neutral-900">
           <span>
             env: <strong>{cfg.env}</strong>
