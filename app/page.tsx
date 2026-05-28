@@ -82,9 +82,6 @@ export default function Home() {
             </div>
 
             <div id="shopify" className="scroll-mt-6 space-y-4">
-              <h3 className="text-lg font-semibold text-neutral-800 dark:text-neutral-100">
-                Syncing this feed into a Shopify app
-              </h3>
               <p>
                 The inventory endpoint is a stable JSON feed of eBay listings —
                 well-suited to drive a Shopify-side mirror without ever giving
