@@ -133,7 +133,6 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
                       <thead className="text-xs uppercase text-neutral-500">
                         <tr>
                           <th className="px-2 py-1"></th>
-                          <th className="px-2 py-1"></th>
                           <th className="px-2 py-1">ItemID</th>
                           <th className="px-2 py-1">Title</th>
                           <th className="px-2 py-1">SKU</th>
@@ -174,19 +173,6 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
                                 >
                                   {isSelected ? "Selected" : "Use"}
                                 </button>
-                              </td>
-                              <td className="px-2 py-1">
-                                {it.pictureUrls?.[0] ? (
-                                  // eslint-disable-next-line @next/next/no-img-element
-                                  <img
-                                    src={it.pictureUrls[0]}
-                                    alt=""
-                                    loading="lazy"
-                                    className="h-20 w-20 rounded object-cover"
-                                  />
-                                ) : (
-                                  <div className="h-20 w-20 rounded bg-neutral-100 dark:bg-neutral-800" />
-                                )}
                               </td>
                               <td className="px-2 py-1 font-mono text-xs">
                                 {it.viewItemUrl ? (
