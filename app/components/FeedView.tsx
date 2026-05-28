@@ -128,34 +128,95 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
                 <span>{pull.durationMs}ms (last page)</span>
               </div>
               {items.length > 0 ? (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-sm">
-                    <thead className="text-xs uppercase text-neutral-500">
-                      <tr>
-                        {/* "Use" column hidden — will surface again when more sample bodies consume rememberedItemId. */}
-                        <th className="px-2 py-1">ItemID</th>
-                        <th className="px-2 py-1">Title</th>
-                        <th className="px-2 py-1">SKU</th>
-                        <th className="px-2 py-1">Qty</th>
-                        <th className="px-2 py-1">Sold</th>
-                        <th className="px-2 py-1">Price</th>
-                        <th className="px-2 py-1">Status</th>
-                        <th className="px-2 py-1">Category</th>
-                        <th className="px-2 py-1">Type</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {items.map((it) => {
-                        const isSelected = rememberedItemId === it.itemId;
-                        return (
-                          <tr
-                            key={it.itemId}
-                            className={`border-t border-neutral-100 dark:border-neutral-800 ${
-                              isSelected ? "bg-blue-50 dark:bg-blue-950/30" : ""
-                            }`}
-                          >
-                            {/* "Use" cell hidden — see header note. */}
-                            <td className="px-2 py-1 font-mono text-xs">
+                <div>
+                  {/* Desktop / tablet: data table */}
+                  <div className="hidden overflow-x-auto md:block">
+                    <table className="w-full text-left text-sm">
+                      <thead className="text-xs uppercase text-neutral-500">
+                        <tr>
+                          {/* "Use" column hidden — will surface again when more sample bodies consume rememberedItemId. */}
+                          <th className="px-2 py-1">ItemID</th>
+                          <th className="px-2 py-1">Title</th>
+                          <th className="px-2 py-1">SKU</th>
+                          <th className="px-2 py-1">Qty</th>
+                          <th className="px-2 py-1">Sold</th>
+                          <th className="px-2 py-1">Price</th>
+                          <th className="px-2 py-1">Status</th>
+                          <th className="px-2 py-1">Category</th>
+                          <th className="px-2 py-1">Type</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {items.map((it) => {
+                          const isSelected = rememberedItemId === it.itemId;
+                          return (
+                            <tr
+                              key={it.itemId}
+                              className={`border-t border-neutral-100 dark:border-neutral-800 ${
+                                isSelected ? "bg-blue-50 dark:bg-blue-950/30" : ""
+                              }`}
+                            >
+                              {/* "Use" cell hidden — see header note. */}
+                              <td className="px-2 py-1 font-mono text-xs">
+                                {it.viewItemUrl ? (
+                                  <a
+                                    href={it.viewItemUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-blue-600 hover:underline"
+                                  >
+                                    {it.itemId}
+                                  </a>
+                                ) : (
+                                  it.itemId
+                                )}
+                              </td>
+                              <td className="px-2 py-1">{it.title}</td>
+                              <td className="px-2 py-1 font-mono text-xs">{it.sku}</td>
+                              <td className="px-2 py-1">{it.quantity}</td>
+                              <td className="px-2 py-1">{it.quantitySold}</td>
+                              <td className="px-2 py-1">
+                                {it.price} {it.currency}
+                              </td>
+                              <td className="px-2 py-1 text-xs">
+                                <span
+                                  className={
+                                    it.listingStatus === "Active"
+                                      ? "text-green-700 dark:text-green-400"
+                                      : "text-neutral-500"
+                                  }
+                                >
+                                  {it.listingStatus || "—"}
+                                </span>
+                              </td>
+                              <td className="px-2 py-1 text-xs text-neutral-500">
+                                {it.primaryCategoryName || it.primaryCategoryId}
+                              </td>
+                              <td className="px-2 py-1">{it.listingType}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Mobile: one <dl> per listing */}
+                  <ul className="space-y-3 md:hidden">
+                    {items.map((it) => {
+                      const isSelected = rememberedItemId === it.itemId;
+                      return (
+                        <li
+                          key={it.itemId}
+                          className={`rounded-md border border-neutral-200 p-3 text-xs dark:border-neutral-800 ${
+                            isSelected ? "bg-blue-50 dark:bg-blue-950/30" : ""
+                          }`}
+                        >
+                          <p className="mb-2 text-sm font-medium text-neutral-800 dark:text-neutral-100">
+                            {it.title}
+                          </p>
+                          <dl className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1">
+                            <dt className="text-neutral-500">ItemID</dt>
+                            <dd className="font-mono">
                               {it.viewItemUrl ? (
                                 <a
                                   href={it.viewItemUrl}
@@ -168,34 +229,47 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
                               ) : (
                                 it.itemId
                               )}
-                            </td>
-                            <td className="px-2 py-1">{it.title}</td>
-                            <td className="px-2 py-1 font-mono text-xs">{it.sku}</td>
-                            <td className="px-2 py-1">{it.quantity}</td>
-                            <td className="px-2 py-1">{it.quantitySold}</td>
-                            <td className="px-2 py-1">
+                            </dd>
+                            {it.sku && (
+                              <>
+                                <dt className="text-neutral-500">SKU</dt>
+                                <dd className="font-mono">{it.sku}</dd>
+                              </>
+                            )}
+                            <dt className="text-neutral-500">Qty / Sold</dt>
+                            <dd>
+                              {it.quantity} / {it.quantitySold}
+                            </dd>
+                            <dt className="text-neutral-500">Price</dt>
+                            <dd>
                               {it.price} {it.currency}
-                            </td>
-                            <td className="px-2 py-1 text-xs">
-                              <span
-                                className={
-                                  it.listingStatus === "Active"
-                                    ? "text-green-700 dark:text-green-400"
-                                    : "text-neutral-500"
-                                }
-                              >
-                                {it.listingStatus || "—"}
-                              </span>
-                            </td>
-                            <td className="px-2 py-1 text-xs text-neutral-500">
-                              {it.primaryCategoryName || it.primaryCategoryId}
-                            </td>
-                            <td className="px-2 py-1">{it.listingType}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                            </dd>
+                            <dt className="text-neutral-500">Status</dt>
+                            <dd
+                              className={
+                                it.listingStatus === "Active"
+                                  ? "text-green-700 dark:text-green-400"
+                                  : "text-neutral-500"
+                              }
+                            >
+                              {it.listingStatus || "—"}
+                            </dd>
+                            {(it.primaryCategoryName || it.primaryCategoryId) && (
+                              <>
+                                <dt className="text-neutral-500">Category</dt>
+                                <dd className="text-neutral-500">
+                                  {it.primaryCategoryName || it.primaryCategoryId}
+                                </dd>
+                              </>
+                            )}
+                            <dt className="text-neutral-500">Type</dt>
+                            <dd>{it.listingType}</dd>
+                          </dl>
+                        </li>
+                      );
+                    })}
+                  </ul>
+
                   {pull.hasMore && (
                     <div className="mt-3 flex justify-center">
                       <button
