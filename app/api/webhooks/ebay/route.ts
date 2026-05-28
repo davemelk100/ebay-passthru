@@ -2,9 +2,18 @@ import "server-only";
 import { NextResponse } from "next/server";
 import { createHash, randomUUID } from "node:crypto";
 import { XMLParser } from "fast-xml-parser";
-import { readConfig } from "@/lib/ebay";
+import { callTradingApi, readConfig } from "@/lib/ebay";
+import { asArray, extractArray } from "@/lib/ebay-xml";
 import { notificationStore } from "@/lib/notifications-store";
 import type { NotificationEvent } from "@/lib/types";
+
+const BID_EVENT_NAMES = new Set([
+  "BestOffer",
+  "BestOfferPlaced",
+  "BestOfferDeclined",
+  "BidPlaced",
+  "BidReceived",
+]);
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -105,9 +114,10 @@ export async function POST(req: Request) {
     );
   }
 
-  // Normalize offer-flavored events. Best-offer payloads put the offer
-  // under ResponseDetails / BestOffer at the top, and Item details under
-  // Item at the top.
+  // Normalize offer-flavored events. eBay sometimes places the offer
+  // straight under the response root, sometimes under BestOfferArray /
+  // BestOffer, sometimes only the Item element is present and the buyer's
+  // price requires a follow-up GetBestOffers call.
   type RawBestOffer = {
     BestOfferID?: string;
     Buyer?: { UserID?: string };
@@ -115,7 +125,21 @@ export async function POST(req: Request) {
     Quantity?: string | number;
   };
   type RawItem = { ItemID?: string | number; Title?: string };
-  const offer = (response.BestOffer ?? null) as RawBestOffer | null;
+
+  function findBestOffer(obj: unknown, depth = 0): RawBestOffer | null {
+    if (depth > 6 || !obj || typeof obj !== "object") return null;
+    const o = obj as Record<string, unknown>;
+    if (o.BestOfferID !== undefined || (o.Price !== undefined && o.Buyer !== undefined)) {
+      return o as RawBestOffer;
+    }
+    for (const v of Object.values(o)) {
+      const found = findBestOffer(v, depth + 1);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  const offer = (response.BestOffer ?? findBestOffer(response)) as RawBestOffer | null;
   const item = (response.Item ?? null) as RawItem | null;
 
   const event: NotificationEvent = {
@@ -131,6 +155,40 @@ export async function POST(req: Request) {
     quantity: offer?.Quantity !== undefined ? Number(offer.Quantity) : undefined,
     signatureValid,
   };
+
+  // Fallback for bid-style events whose notification XML didn't carry the
+  // BestOffer details — pull the live pending offers for that item and pick
+  // the matching offer (or the most recent if BestOfferID isn't known).
+  if (BID_EVENT_NAMES.has(eventName) && event.itemId && event.offerPrice === undefined) {
+    try {
+      const r = await callTradingApi(
+        "GetBestOffers",
+        `<ItemID>${event.itemId}</ItemID><BestOfferStatus>Active</BestOfferStatus><DetailLevel>ReturnAll</DetailLevel>`,
+        cfg,
+      );
+      const offers = extractArray<RawBestOffer>(
+        r.parsed,
+        "GetBestOffersResponse",
+        "BestOfferArray",
+        "BestOffer",
+      );
+      const match =
+        offers.find((o) => o.BestOfferID && o.BestOfferID === event.bestOfferId) ??
+        offers[offers.length - 1];
+      if (match) {
+        event.bestOfferId ??= match.BestOfferID ? String(match.BestOfferID) : undefined;
+        event.offerPrice = match.Price !== undefined ? priceNumber(match.Price) : event.offerPrice;
+        event.currency = match.Price !== undefined ? priceCurrency(match.Price) : event.currency;
+        event.buyerUserId = match.Buyer?.UserID
+          ? String(asArray(match.Buyer.UserID)[0])
+          : event.buyerUserId;
+        event.quantity =
+          match.Quantity !== undefined ? Number(match.Quantity) : event.quantity;
+      }
+    } catch (err) {
+      console.warn(`ebay-webhook: GetBestOffers fallback failed for ${event.itemId}`, err);
+    }
+  }
 
   await notificationStore.push(event);
 
