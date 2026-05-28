@@ -10,7 +10,7 @@ export default function Home() {
   const cfg = readConfig();
 
   return (
-    <main className="mx-auto max-w-7xl px-6 py-10">
+    <main className="px-6 py-10 lg:pl-56 lg:pr-8">
       <LeftNav />
       <header className="mb-8">
         <h1 className="text-3xl font-bold">eBay Inventory Sync</h1>

@@ -6,6 +6,13 @@
   color-scheme: light dark;
 }
 
+/* Bumps the root font-size 16px -> 18px so every Tailwind rem-based size
+   (text-xs, text-sm, text-base, …) scales up proportionally. Single dial
+   for site-wide typography. */
+html {
+  font-size: 18px;
+}
+
 body {
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
