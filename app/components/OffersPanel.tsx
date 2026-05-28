@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useApiCall } from "./useApiCall";
 import type {
   NotificationEvent,
@@ -8,6 +8,9 @@ import type {
   RecentNotificationsResult,
   SubscriptionsResult,
 } from "@/lib/types";
+
+// Event names we treat as "a bid came in" for desktop alerting.
+const BID_EVENT_NAMES = new Set(["BidPlaced", "BidReceived", "BestOfferPlaced"]);
 
 function formatExpiration(iso: string): string {
   if (!iso) return "—";
@@ -40,10 +43,31 @@ export default function OffersPanel() {
   const { data, error, loading, run } = useApiCall<OffersResult>();
   const [recent, setRecent] = useState<RecentNotificationsResult | null>(null);
   const [subs, setSubs] = useState<SubscriptionsResult | null>(null);
+  const [notifPermission, setNotifPermission] = useState<NotificationPermission | "unsupported">(
+    "default",
+  );
+  // Track which event IDs we've already alerted on so a poll doesn't re-fire
+  // for events that were already in the buffer when the page loaded.
+  const seenEventIds = useRef<Set<string>>(new Set());
+  const firstPollDone = useRef(false);
 
   async function refresh() {
     await run("/api/offers", {});
   }
+
+  async function enableNotifications() {
+    if (typeof Notification === "undefined") return;
+    const result = await Notification.requestPermission();
+    setNotifPermission(result);
+  }
+
+  useEffect(() => {
+    if (typeof Notification === "undefined") {
+      setNotifPermission("unsupported");
+      return;
+    }
+    setNotifPermission(Notification.permission);
+  }, []);
 
   // Poll the webhook store every 15s. Reads from in-memory or Upstash
   // depending on what the server has wired up.
@@ -53,7 +77,34 @@ export default function OffersPanel() {
       try {
         const r = await fetch("/api/offers/recent", { cache: "no-store" });
         const json = (await r.json()) as RecentNotificationsResult;
-        if (!cancelled) setRecent(json);
+        if (cancelled) return;
+        setRecent(json);
+
+        const incoming = json.events ?? [];
+        if (!firstPollDone.current) {
+          for (const ev of incoming) seenEventIds.current.add(ev.id);
+          firstPollDone.current = true;
+          return;
+        }
+        if (typeof Notification === "undefined" || Notification.permission !== "granted") {
+          for (const ev of incoming) seenEventIds.current.add(ev.id);
+          return;
+        }
+        for (const ev of incoming) {
+          if (seenEventIds.current.has(ev.id)) continue;
+          seenEventIds.current.add(ev.id);
+          if (!BID_EVENT_NAMES.has(ev.eventName)) continue;
+          const priceLine =
+            ev.offerPrice !== undefined
+              ? `${ev.offerPrice} ${ev.currency || ""}${ev.quantity ? ` × ${ev.quantity}` : ""}`
+              : "";
+          const buyerLine = ev.buyerUserId ? ` from ${ev.buyerUserId}` : "";
+          const body = [priceLine + buyerLine, ev.title].filter(Boolean).join(" — ");
+          new Notification(`eBay: ${ev.eventName}`, {
+            body: body || undefined,
+            tag: ev.id,
+          });
+        }
       } catch {
         // network blip — keep last snapshot
       }
@@ -111,6 +162,25 @@ export default function OffersPanel() {
                 ({events.length} buffered · {recent?.backend ?? "—"} backend · polls every 15s)
               </span>
             </span>
+            {notifPermission === "default" && (
+              <button
+                type="button"
+                onClick={enableNotifications}
+                className="rounded-full border border-blue-300 bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700 hover:bg-blue-100 dark:border-blue-900/40 dark:bg-blue-950/30 dark:text-blue-300"
+              >
+                Enable bid alerts
+              </button>
+            )}
+            {notifPermission === "granted" && (
+              <span className="rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-950/30 dark:text-emerald-300">
+                Bid alerts on
+              </span>
+            )}
+            {notifPermission === "denied" && (
+              <span className="rounded-full border border-neutral-300 bg-neutral-50 px-2 py-0.5 text-[11px] font-medium text-neutral-500 dark:border-neutral-700 dark:bg-neutral-900">
+                Bid alerts blocked by browser
+              </span>
+            )}
           </div>
           {subs && (
             <div className="mb-3 flex flex-wrap items-center gap-1.5">
