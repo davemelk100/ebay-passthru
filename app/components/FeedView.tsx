@@ -23,7 +23,8 @@ import type {
 } from "@/lib/types";
 
 const DEFAULT_PAGE_SIZE = 50;
-const PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 150, 200, 250];
+// 0 is the sentinel for "show all" — every render path special-cases it.
+const PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 150, 200, 250, 0];
 const FETCH_PAGE_SIZE = 200; // server-side fetch page size (eBay max for GetSellerList)
 const PREFETCH_CONCURRENCY = 4;
 const CACHE_KEY_PREFIX = "ebay-inventory-v1";
@@ -344,10 +345,16 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
     });
   }, [items, latestEventByItemId, sortColumn, sortDir]);
 
-  const totalPagesClient = Math.max(1, Math.ceil(sortedItems.length / pageSize));
+  const showingAll = pageSize === 0;
+  const totalPagesClient = showingAll
+    ? 1
+    : Math.max(1, Math.ceil(sortedItems.length / pageSize));
   const displayedItems = useMemo(
-    () => sortedItems.slice((currentPage - 1) * pageSize, currentPage * pageSize),
-    [sortedItems, currentPage, pageSize],
+    () =>
+      showingAll
+        ? sortedItems
+        : sortedItems.slice((currentPage - 1) * pageSize, currentPage * pageSize),
+    [sortedItems, currentPage, pageSize, showingAll],
   );
 
   // ---------- Webhook live-events poll (15s) ----------
@@ -474,7 +481,7 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
           >
             {PAGE_SIZE_OPTIONS.map((n) => (
               <option key={n} value={n}>
-                {n}
+                {n === 0 ? "All" : n}
               </option>
             ))}
           </select>
@@ -565,7 +572,7 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
 
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <p className="text-xs text-neutral-500">
-            Auto-loaded ({pageSize} per page) — items with recent activity float to the top.
+            Auto-loaded ({showingAll ? "all rows" : `${pageSize} per page`}) — items with recent activity float to the top.
             {events.length > 0 && (
               <span className="ml-1 text-neutral-400">
                 · {events.length} live event{events.length === 1 ? "" : "s"} buffered (
@@ -651,8 +658,10 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
                   </span>
                   <span>·</span>
                   <span>
-                    Showing {(currentPage - 1) * pageSize + 1}–
-                    {Math.min(currentPage * pageSize, sortedItems.length)} of {sortedItems.length}
+                    Showing {showingAll ? 1 : (currentPage - 1) * pageSize + 1}–
+                    {showingAll
+                      ? sortedItems.length
+                      : Math.min(currentPage * pageSize, sortedItems.length)} of {sortedItems.length}
                   </span>
                   {sortColumn && (
                     <>
