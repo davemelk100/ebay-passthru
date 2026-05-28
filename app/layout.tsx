@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "eBay Passthru",
+  title: "eBay Inventory Sync",
   description: "Inspect an eBay Trading API feed and verify CRUD operations.",
   robots: {
     index: false,
