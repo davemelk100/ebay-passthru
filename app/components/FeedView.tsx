@@ -165,10 +165,10 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
                                     src={it.pictureUrls[0]}
                                     alt=""
                                     loading="lazy"
-                                    className="h-10 w-10 rounded object-cover"
+                                    className="h-20 w-20 rounded object-cover"
                                   />
                                 ) : (
-                                  <div className="h-10 w-10 rounded bg-neutral-100 dark:bg-neutral-800" />
+                                  <div className="h-20 w-20 rounded bg-neutral-100 dark:bg-neutral-800" />
                                 )}
                               </td>
                               <td className="px-2 py-1 font-mono text-xs">
