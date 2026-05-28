@@ -45,6 +45,36 @@ export interface InventoryResult {
   missing?: string[];
 }
 
+// ---------- Active offers ----------
+
+export interface ActiveOffer {
+  itemId: string;
+  title: string;
+  viewItemUrl: string;
+  pictureUrl: string;
+  bestOfferId: string;
+  status: string;
+  offerPrice: number;
+  currency: string;
+  quantity: number;
+  buyerUserId: string;
+  expirationTime: string;
+  message: string;
+}
+
+export interface OffersResult {
+  ok: boolean;
+  itemsWithOffers?: number;
+  offerCount?: number;
+  offers?: ActiveOffer[];
+  durationMs?: number;
+  fetchedAt?: string;
+  env?: string;
+  error?: string;
+  errors?: EbayErrorSummary[];
+  missing?: string[];
+}
+
 export interface ClearItemResult {
   itemId: string;
   ended: boolean;
