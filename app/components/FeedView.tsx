@@ -16,9 +16,7 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
     run: runPull,
     reset: resetPull,
   } = useApiCall<InventoryResult>();
-  // setter intentionally unused — Use button is hidden; row highlight still
-  // reflects an ItemID pinned from elsewhere (e.g. CallPanel) if/when re-enabled.
-  const [rememberedItemId] = useRememberedItemId();
+  const [rememberedItemId, setRememberedItemId] = useRememberedItemId();
   const [includeEnded, setIncludeEnded] = useState(false);
   const [items, setItems] = useState<InventoryItem[]>([]);
 
@@ -134,7 +132,7 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
                     <table className="w-full text-left text-sm">
                       <thead className="text-xs uppercase text-neutral-500">
                         <tr>
-                          {/* "Use" column hidden — will surface again when more sample bodies consume rememberedItemId. */}
+                          <th className="px-2 py-1"></th>
                           <th className="px-2 py-1"></th>
                           <th className="px-2 py-1">ItemID</th>
                           <th className="px-2 py-1">Title</th>
@@ -157,7 +155,26 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
                                 isSelected ? "bg-blue-50 dark:bg-blue-950/30" : ""
                               }`}
                             >
-                              {/* "Use" cell hidden — see header note. */}
+                              <td className="px-2 py-1">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setRememberedItemId(isSelected ? null : it.itemId)
+                                  }
+                                  title={
+                                    isSelected
+                                      ? "Currently selected — click to unset"
+                                      : "Use this ItemID in the call panels / counter-bid engine"
+                                  }
+                                  className={`rounded px-2 py-0.5 text-[11px] font-medium ${
+                                    isSelected
+                                      ? "bg-blue-600 text-white"
+                                      : "border border-neutral-300 text-neutral-700 hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
+                                  }`}
+                                >
+                                  {isSelected ? "Selected" : "Use"}
+                                </button>
+                              </td>
                               <td className="px-2 py-1">
                                 {it.pictureUrls?.[0] ? (
                                   // eslint-disable-next-line @next/next/no-img-element
@@ -238,9 +255,24 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
                               <div className="aspect-square w-28 flex-shrink-0 rounded bg-neutral-100 dark:bg-neutral-800" />
                             )}
                             <div className="min-w-0 flex-1">
-                              <p className="mb-2 text-sm font-medium text-neutral-800 dark:text-neutral-100">
-                                {it.title}
-                              </p>
+                              <div className="mb-2 flex items-start justify-between gap-2">
+                                <p className="text-sm font-medium text-neutral-800 dark:text-neutral-100">
+                                  {it.title}
+                                </p>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setRememberedItemId(isSelected ? null : it.itemId)
+                                  }
+                                  className={`flex-shrink-0 rounded px-2 py-0.5 text-[11px] font-medium ${
+                                    isSelected
+                                      ? "bg-blue-600 text-white"
+                                      : "border border-neutral-300 text-neutral-700 hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
+                                  }`}
+                                >
+                                  {isSelected ? "Selected" : "Use"}
+                                </button>
+                              </div>
                               <dl className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1">
                             <dt className="text-neutral-500">ItemID</dt>
                             <dd className="font-mono">
