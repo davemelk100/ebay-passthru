@@ -225,23 +225,23 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
                             isSelected ? "bg-blue-50 dark:bg-blue-950/30" : ""
                           }`}
                         >
-                          <div className="mb-2 flex items-start gap-3">
+                          <div className="flex items-start gap-3">
                             {it.pictureUrls?.[0] ? (
                               // eslint-disable-next-line @next/next/no-img-element
                               <img
                                 src={it.pictureUrls[0]}
                                 alt=""
                                 loading="lazy"
-                                className="h-16 w-16 flex-shrink-0 rounded object-cover"
+                                className="w-28 flex-shrink-0 rounded object-contain"
                               />
                             ) : (
-                              <div className="h-16 w-16 flex-shrink-0 rounded bg-neutral-100 dark:bg-neutral-800" />
+                              <div className="aspect-square w-28 flex-shrink-0 rounded bg-neutral-100 dark:bg-neutral-800" />
                             )}
-                            <p className="text-sm font-medium text-neutral-800 dark:text-neutral-100">
-                              {it.title}
-                            </p>
-                          </div>
-                          <dl className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1">
+                            <div className="min-w-0 flex-1">
+                              <p className="mb-2 text-sm font-medium text-neutral-800 dark:text-neutral-100">
+                                {it.title}
+                              </p>
+                              <dl className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1">
                             <dt className="text-neutral-500">ItemID</dt>
                             <dd className="font-mono">
                               {it.viewItemUrl ? (
@@ -292,6 +292,8 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
                             <dt className="text-neutral-500">Type</dt>
                             <dd>{it.listingType}</dd>
                           </dl>
+                            </div>
+                          </div>
                         </li>
                       );
                     })}
