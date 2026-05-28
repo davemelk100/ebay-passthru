@@ -10,29 +10,20 @@ export const dynamic = "force-dynamic";
 export default function Home() {
   const cfg = readConfig();
   const missing = configIssues(cfg);
-  const endpoint =
-    cfg.env === "production"
-      ? "https://api.ebay.com/ws/api.dll"
-      : "https://api.sandbox.ebay.com/ws/api.dll";
 
   return (
     <main className="mx-auto max-w-6xl px-6 py-10">
       <header className="mb-8">
-        <div className="flex items-start justify-between gap-4">
+        <div className="flex items-center justify-between gap-4">
           <h1 className="text-3xl font-bold">eBay Passthru</h1>
-          <div className="flex flex-col items-end text-right">
-            <a
-              href="https://github.com/davemelk100/ebay-passthru"
-              target="_blank"
-              rel="noreferrer"
-              className="font-mono text-xs text-neutral-500 hover:text-neutral-700 hover:underline dark:hover:text-neutral-200"
-            >
-              github.com/davemelk100/ebay-passthru
-            </a>
-            <span className="mt-1 font-mono text-xs text-neutral-500">
-              Trading API endpoint: {endpoint}
-            </span>
-          </div>
+          <a
+            href="https://github.com/davemelk100/ebay-passthru"
+            target="_blank"
+            rel="noreferrer"
+            className="font-mono text-xs text-neutral-500 hover:text-neutral-700 hover:underline dark:hover:text-neutral-200"
+          >
+            github.com/davemelk100/ebay-passthru
+          </a>
         </div>
         <div className="mt-2 inline-flex flex-wrap items-center gap-2 rounded-full border border-neutral-200 bg-white px-3 py-1 text-xs dark:border-neutral-800 dark:bg-neutral-900">
           <span>
