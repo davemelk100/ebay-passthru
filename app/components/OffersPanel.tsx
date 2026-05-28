@@ -1,7 +1,8 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useApiCall } from "./useApiCall";
-import type { OffersResult } from "@/lib/types";
+import type { NotificationEvent, OffersResult, RecentNotificationsResult } from "@/lib/types";
 
 function formatExpiration(iso: string): string {
   if (!iso) return "—";
@@ -17,14 +18,50 @@ function formatExpiration(iso: string): string {
   return `${days}d`;
 }
 
+const RECENT_POLL_MS = 15000;
+
+function formatTimeAgo(iso: string): string {
+  if (!iso) return "—";
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return iso;
+  const diff = Date.now() - t;
+  if (diff < 60_000) return `${Math.round(diff / 1000)}s ago`;
+  if (diff < 3_600_000) return `${Math.round(diff / 60_000)}m ago`;
+  if (diff < 86_400_000) return `${Math.round(diff / 3_600_000)}h ago`;
+  return `${Math.round(diff / 86_400_000)}d ago`;
+}
+
 export default function OffersPanel() {
   const { data, error, loading, run } = useApiCall<OffersResult>();
+  const [recent, setRecent] = useState<RecentNotificationsResult | null>(null);
 
   async function refresh() {
     await run("/api/offers", {});
   }
 
+  // Poll the webhook store every 15s. Reads from in-memory or Upstash
+  // depending on what the server has wired up.
+  useEffect(() => {
+    let cancelled = false;
+    async function tick() {
+      try {
+        const r = await fetch("/api/offers/recent", { cache: "no-store" });
+        const json = (await r.json()) as RecentNotificationsResult;
+        if (!cancelled) setRecent(json);
+      } catch {
+        // network blip — keep last snapshot
+      }
+    }
+    tick();
+    const id = setInterval(tick, RECENT_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, []);
+
   const offers = data?.offers ?? [];
+  const events: NotificationEvent[] = recent?.events ?? [];
 
   return (
     <details className="group rounded-lg border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
@@ -42,10 +79,52 @@ export default function OffersPanel() {
         </span>
       </summary>
       <div className="border-t border-neutral-200 p-4 dark:border-neutral-800">
+        {/* Webhook event stream — push-delivered by eBay Platform Notifications. */}
+        <div className="mb-4 rounded-md border border-neutral-200 bg-neutral-50 p-3 text-xs dark:border-neutral-800 dark:bg-neutral-950">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <span className="font-medium text-neutral-700 dark:text-neutral-200">
+              Live events{" "}
+              <span className="ml-1 font-normal text-neutral-500">
+                ({events.length} buffered · {recent?.backend ?? "—"} backend · polls every 15s)
+              </span>
+            </span>
+          </div>
+          {events.length > 0 ? (
+            <ul className="space-y-1.5">
+              {events.slice(0, 10).map((e) => (
+                <li key={e.id} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                  <span className="font-mono text-[11px] text-neutral-500">
+                    {formatTimeAgo(e.timestamp)}
+                  </span>
+                  <strong className="text-neutral-700 dark:text-neutral-200">{e.eventName}</strong>
+                  {e.offerPrice !== undefined && (
+                    <span>
+                      {e.offerPrice} {e.currency || ""}
+                      {e.quantity ? ` × ${e.quantity}` : ""}
+                    </span>
+                  )}
+                  {e.buyerUserId && <span className="font-mono">from {e.buyerUserId}</span>}
+                  {e.title && <span className="truncate text-neutral-500">— {e.title}</span>}
+                  {e.signatureValid === false && (
+                    <span className="text-amber-600">⚠ unsigned</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-neutral-500">
+              No webhook events received yet. Run{" "}
+              <code className="font-mono">node scripts/setup-notifications.mjs</code> to subscribe,
+              then <code className="font-mono">node scripts/test-webhook.mjs</code> for a synthetic
+              test event.
+            </p>
+          )}
+        </div>
+
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <p className="text-xs text-neutral-500">
-            Lists every currently-pending Best Offer across the seller account. Click
-            &ldquo;Refresh&rdquo; to re-poll eBay; this app does not auto-poll.
+            Manual pull via GetMyeBaySelling + GetBestOffers. Use this for a full re-sync; the
+            live events strip above is the lightweight day-to-day view.
           </p>
           <div className="flex items-center gap-2">
             {data?.fetchedAt && (

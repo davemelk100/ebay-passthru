@@ -45,6 +45,35 @@ export interface InventoryResult {
   missing?: string[];
 }
 
+// ---------- Notification events ----------
+
+// Normalized event produced by /api/webhooks/ebay after parsing the raw
+// Trading-API Platform Notification XML. Stored in notificationStore and
+// surfaced in the UI under "Active offers".
+export interface NotificationEvent {
+  id: string;
+  eventName: string;
+  // ISO timestamp of when eBay generated the event (or when we received it
+  // if eBay didn't supply one).
+  timestamp: string;
+  itemId?: string;
+  bestOfferId?: string;
+  title?: string;
+  offerPrice?: number;
+  currency?: string;
+  buyerUserId?: string;
+  quantity?: number;
+  signatureValid?: boolean;
+}
+
+export interface RecentNotificationsResult {
+  ok: boolean;
+  backend: "memory" | "upstash";
+  count: number;
+  events: NotificationEvent[];
+  error?: string;
+}
+
 // ---------- Active offers ----------
 
 export interface ActiveOffer {
