@@ -25,7 +25,7 @@ export default function Home() {
           </section>
           {/* <CrudCheck /> */}
 
-          <section className="mt-10 space-y-10 text-sm leading-relaxed text-neutral-600 dark:text-neutral-400">
+          <section className="mt-10 hidden space-y-10 text-sm leading-relaxed text-neutral-600 dark:text-neutral-400">
             <div id="about" className="scroll-mt-6 space-y-4">
               <h2 className="text-lg font-semibold text-neutral-800 dark:text-neutral-100">
                 What this app does

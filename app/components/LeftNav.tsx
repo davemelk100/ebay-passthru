@@ -10,7 +10,6 @@ interface NavItem {
 const ITEMS: NavItem[] = [
   { id: "inventory", label: "Listings & bids" },
   { id: "counter-bid", label: "Counter-bid" },
-  { id: "about", label: "What this app does" },
 ];
 
 export default function LeftNav() {
@@ -59,7 +58,7 @@ export default function LeftNav() {
   }, []);
 
   return (
-    <nav className="fixed left-4 top-6 hidden lg:block" aria-label="Page sections">
+    <nav className="fixed left-4 top-36 hidden lg:block" aria-label="Page sections">
       <ul className="space-y-1 text-sm">
         {ITEMS.map((it) => (
           <li key={it.id}>

@@ -4,11 +4,9 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { useRememberedItemId } from "./useRememberedItemId";
 import { useApiCall } from "./useApiCall";
 import type {
-  ActiveOffer,
   InventoryItem,
   InventoryResult,
   NotificationEvent,
-  OffersResult,
   RecentNotificationsResult,
   SubscriptionsResult,
 } from "@/lib/types";
@@ -16,6 +14,56 @@ import type {
 const PAGE_SIZE = 10; // client-side display page size
 const FETCH_PAGE_SIZE = 200; // server-side fetch page size (eBay max for GetSellerList)
 const PREFETCH_CONCURRENCY = 4;
+const CACHE_KEY_PREFIX = "ebay-inventory-v1";
+const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+interface CachedInventory {
+  items: InventoryItem[];
+  pull: InventoryResult;
+  timestamp: number;
+}
+
+function cacheKey(includeEnded: boolean): string {
+  return `${CACHE_KEY_PREFIX}:${includeEnded ? "all" : "active"}`;
+}
+
+function loadCachedInventory(includeEnded: boolean): CachedInventory | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(cacheKey(includeEnded));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as CachedInventory;
+    if (Date.now() - parsed.timestamp > CACHE_TTL_MS) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function saveCachedInventory(
+  includeEnded: boolean,
+  items: InventoryItem[],
+  pull: InventoryResult,
+): void {
+  if (typeof window === "undefined") return;
+  try {
+    // Strip everything we don't render. pictureUrls in particular blows up
+    // the cache (each item can carry 5+ ~150-char URLs and only the first is
+    // ever shown on mobile). Cuts the serialized payload by ~60–70%, which
+    // matters because JSON.parse on a 5MB+ string blocks the main thread on
+    // every page load.
+    const slim: InventoryItem[] = items.map((it) => ({
+      ...it,
+      pictureUrls: it.pictureUrls.slice(0, 1),
+    }));
+    window.localStorage.setItem(
+      cacheKey(includeEnded),
+      JSON.stringify({ items: slim, pull, timestamp: Date.now() } as CachedInventory),
+    );
+  } catch {
+    /* quota exceeded / storage disabled — skip caching, don't break the page */
+  }
+}
 const RECENT_POLL_MS = 15000;
 const BID_EVENT_NAMES = new Set(["BidPlaced", "BidReceived", "BestOfferPlaced"]);
 
@@ -30,18 +78,29 @@ function formatTimeAgo(iso: string): string {
   return `${Math.round(diff / 86_400_000)}d ago`;
 }
 
-function formatExpiration(iso: string): string {
-  if (!iso) return "—";
-  const t = Date.parse(iso);
-  if (!Number.isFinite(t)) return iso;
-  const diffMs = t - Date.now();
-  if (diffMs <= 0) return "expired";
-  const mins = Math.round(diffMs / 60000);
-  if (mins < 60) return `${mins}m`;
-  const hours = Math.round(mins / 60);
-  if (hours < 48) return `${hours}h`;
-  const days = Math.round(hours / 24);
-  return `${days}d`;
+// Module-level cache of Intl.NumberFormat instances. Constructing the
+// formatter is the expensive part — reusing it per currency code makes the
+// table's price column render essentially free.
+const priceFormatters = new Map<string, Intl.NumberFormat>();
+const FALLBACK_FORMATTER = new Intl.NumberFormat("en-US", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+function formatPrice(price: string, currency: string): string {
+  const n = Number.parseFloat(price);
+  if (!Number.isFinite(n)) return `${price} ${currency}`.trim();
+  const code = currency || "USD";
+  let fmt = priceFormatters.get(code);
+  if (!fmt) {
+    try {
+      fmt = new Intl.NumberFormat("en-US", { style: "currency", currency: code });
+    } catch {
+      fmt = FALLBACK_FORMATTER;
+    }
+    priceFormatters.set(code, fmt);
+  }
+  return fmt.format(n);
 }
 
 export default function FeedView(_props: { env: "sandbox" | "production" }) {
@@ -51,9 +110,8 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
     error: pullError,
     loading: pullLoading,
     run: runPull,
-    reset: resetPull,
+    setData: setPull,
   } = useApiCall<InventoryResult>();
-  const offersCall = useApiCall<OffersResult>();
   const [rememberedItemId, setRememberedItemId] = useRememberedItemId();
   const [includeEnded, setIncludeEnded] = useState(false);
   const [items, setItems] = useState<InventoryItem[]>([]);
@@ -70,7 +128,7 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
   const [currentPage, setCurrentPage] = useState(1);
   const [prefetching, setPrefetching] = useState(false);
   // Bumped on each load cycle so an in-flight prefetch can cancel cleanly when
-  // includeEnded flips or the user hits "Pull active items" again.
+  // includeEnded flips or a manual refresh is triggered.
   const prefetchRunId = useRef(0);
 
   const pullFirst = useCallback(
@@ -89,12 +147,16 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
         setItems([]);
         return;
       }
+      // Local accumulator so the final cache write sees every page, regardless
+      // of which parallel worker landed it.
+      const accumulated: InventoryItem[] = [...first.items];
       setItems(first.items);
       const total = first.totalPages ?? 0;
-      if (total <= 1) return;
+      if (total <= 1) {
+        saveCachedInventory(includeEnded, accumulated, first);
+        return;
+      }
       setPrefetching(true);
-      // Parallel workers chew through the remaining pages. Each page bumps
-      // items so the user can navigate / sort as data arrives.
       const queue = Array.from({ length: total - 1 }, (_, i) => i + 2);
       let cursor = 0;
       async function worker() {
@@ -115,7 +177,10 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
             });
             const data = (await res.json()) as InventoryResult;
             if (myId !== prefetchRunId.current) return;
-            if (data.ok && data.items) setItems((prev) => [...prev, ...data.items!]);
+            if (data.ok && data.items) {
+              accumulated.push(...data.items);
+              setItems((prev) => [...prev, ...data.items!]);
+            }
           } catch {
             /* network blip — skip this page, continue */
           }
@@ -124,7 +189,10 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
       await Promise.all(
         Array.from({ length: Math.min(PREFETCH_CONCURRENCY, queue.length) }, () => worker()),
       );
-      if (myId === prefetchRunId.current) setPrefetching(false);
+      if (myId === prefetchRunId.current) {
+        setPrefetching(false);
+        saveCachedInventory(includeEnded, accumulated, first);
+      }
     },
     [includeEnded, runPull],
   );
@@ -138,34 +206,15 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
   useEffect(() => {
     if (autoPullDone.current) return;
     autoPullDone.current = true;
+    const cached = loadCachedInventory(includeEnded);
+    if (cached) {
+      setItems(cached.items);
+      setPull(cached.pull);
+      return;
+    }
     pullFirst({ silent: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  function clearView() {
-    prefetchRunId.current += 1;
-    setItems([]);
-    setCurrentPage(1);
-    setPrefetching(false);
-    resetPull();
-    offersCall.reset();
-  }
-
-  // ---------- Offers / bids pull ----------
-  async function pullBids() {
-    await offersCall.run("/api/offers", {});
-  }
-
-  const offersByItemId: Map<string, ActiveOffer[]> = useMemo(() => {
-    const m = new Map<string, ActiveOffer[]>();
-    const list = offersCall.data?.offers ?? [];
-    for (const o of list) {
-      const arr = m.get(o.itemId);
-      if (arr) arr.push(o);
-      else m.set(o.itemId, [o]);
-    }
-    return m;
-  }, [offersCall.data]);
 
   // Map of itemId → all live events for that item, newest first. Drives the
   // per-row inline event strip; the bubble-up sort uses the head element.
@@ -231,19 +280,19 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
         return dir * String(av).localeCompare(String(bv));
       });
     }
-    if (offersByItemId.size === 0 && latestEventByItemId.size === 0) return items;
+    if (latestEventByItemId.size === 0) return items;
     return [...items].sort((a, b) => {
       const aEv = latestEventByItemId.get(a.itemId);
       const bEv = latestEventByItemId.get(b.itemId);
-      const aActivity = aEv !== undefined || offersByItemId.has(a.itemId) ? 1 : 0;
-      const bActivity = bEv !== undefined || offersByItemId.has(b.itemId) ? 1 : 0;
+      const aActivity = aEv !== undefined ? 1 : 0;
+      const bActivity = bEv !== undefined ? 1 : 0;
       if (aActivity !== bActivity) return bActivity - aActivity;
       if (aEv && bEv) return Date.parse(bEv.timestamp) - Date.parse(aEv.timestamp);
       if (aEv) return -1;
       if (bEv) return 1;
       return 0;
     });
-  }, [items, offersByItemId, latestEventByItemId, sortColumn, sortDir]);
+  }, [items, latestEventByItemId, sortColumn, sortDir]);
 
   const totalPagesClient = Math.max(1, Math.ceil(sortedItems.length / PAGE_SIZE));
   const displayedItems = useMemo(
@@ -323,11 +372,71 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
     setNotifPermission(result);
   }
 
+  // Stamp the ItemID into the shared hook (so the Counter-bid panel picks it
+  // up via useRememberedItemId) and scroll to that section so the seller can
+  // immediately Accept / Decline / Counter the live offer.
+  function openInCounterBid(itemId: string) {
+    setRememberedItemId(itemId);
+    if (typeof window !== "undefined") {
+      const target = document.getElementById("counter-bid");
+      target?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }
+
   const events: NotificationEvent[] = recent?.events ?? [];
-  const offersLoading = offersCall.loading;
-  const offersError = offersCall.error ?? offersCall.data?.error;
-  const offerCount = offersCall.data?.offerCount;
-  const itemsWithOffers = offersCall.data?.itemsWithOffers;
+
+  function Pagination() {
+    return (
+      <div className="flex items-center justify-center gap-2">
+        <button
+          type="button"
+          onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+          disabled={currentPage <= 1}
+          className="rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-100 disabled:opacity-40 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800"
+        >
+          ← Prev
+        </button>
+        <span className="text-xs text-neutral-500">
+          Page <strong className="text-neutral-700 dark:text-neutral-200">{currentPage}</strong>{" "}
+          of {totalPagesClient}
+          {prefetching && (
+            <span className="ml-2 inline-flex items-center gap-1 text-neutral-400">
+              <svg
+                className="h-3 w-3 animate-spin"
+                viewBox="0 0 24 24"
+                fill="none"
+                aria-hidden="true"
+              >
+                <circle
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  strokeWidth="4"
+                  className="opacity-25"
+                />
+                <path
+                  d="M22 12a10 10 0 0 1-10 10"
+                  stroke="currentColor"
+                  strokeWidth="4"
+                  strokeLinecap="round"
+                />
+              </svg>
+              loading {sortedItems.length}/{pull?.totalEntries ?? "?"}
+            </span>
+          )}
+        </span>
+        <button
+          type="button"
+          onClick={() => setCurrentPage((p) => Math.min(totalPagesClient, p + 1))}
+          disabled={currentPage >= totalPagesClient}
+          className="rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-100 disabled:opacity-40 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800"
+        >
+          Next →
+        </button>
+      </div>
+    );
+  }
 
   function SortHeader({ col, label }: { col: SortColumn; label: string }) {
     const active = sortColumn === col;
@@ -349,11 +458,9 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
       <summary className="flex cursor-pointer list-none items-center justify-between p-4 [&::-webkit-details-marker]:hidden">
         <h2 className="text-lg font-semibold">Listings & bids</h2>
         <span className="text-xs text-neutral-500">
-          {offerCount !== undefined
-            ? `${offerCount} bid${offerCount === 1 ? "" : "s"} across ${itemsWithOffers ?? 0} item${itemsWithOffers === 1 ? "" : "s"}`
-            : pull?.totalEntries !== undefined
-              ? `${items.length} / ${pull.totalEntries}`
-              : "GetMyeBaySelling + GetBestOffers"}
+          {pull?.totalEntries !== undefined
+            ? `${items.length} / ${pull.totalEntries}`
+            : "GetSellerList"}
         </span>
       </summary>
       <div className="border-t border-neutral-200 p-4 dark:border-neutral-800">
@@ -364,11 +471,9 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
           </div>
         )}
 
-        {/* Action bar — Pull latest bids is primary, Pull active items secondary */}
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <p className="text-xs text-neutral-500">
-            Pull bids first to see what&apos;s pending. Active items load automatically
-            ({PAGE_SIZE} per page) — items with recent activity float to the top.
+            Auto-loaded ({PAGE_SIZE} per page) — items with recent activity float to the top.
             {events.length > 0 && (
               <span className="ml-1 text-neutral-400">
                 · {events.length} live event{events.length === 1 ? "" : "s"} buffered (
@@ -407,35 +512,35 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
               />
               <span className="relative h-5 w-9 rounded-full bg-neutral-300 transition-colors after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:shadow after:transition-transform after:content-[''] peer-checked:bg-blue-600 peer-checked:after:translate-x-4 peer-disabled:opacity-50 dark:bg-neutral-700" />
             </label>
-            <button
-              type="button"
-              onClick={pullBids}
-              disabled={offersLoading}
-              className="rounded-md bg-amber-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-600 disabled:opacity-60"
-            >
-              {offersLoading ? "Pulling bids…" : "Pull latest bids"}
-            </button>
-            <button
-              type="button"
-              onClick={() => pullFirst()}
-              disabled={pullLoading}
-              className="rounded-md bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-neutral-700 disabled:opacity-60 dark:bg-neutral-100 dark:text-neutral-900"
-            >
-              {pullLoading && items.length === 0 ? "Pulling…" : "Pull active items"}
-            </button>
-            <button
-              type="button"
-              onClick={clearView}
-              disabled={pullLoading || (items.length === 0 && pull === null && !offersCall.data)}
-              title="Clears the on-screen tables only — does not touch eBay."
-              className="rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-100 disabled:opacity-60 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800"
-            >
-              Clear view
-            </button>
           </div>
         </div>
 
-        {offersError && <p className="mb-2 text-xs text-red-600">{offersError}</p>}
+        {!pull && !pullError && (pullLoading || items.length === 0) ? (
+          <div className="flex flex-col items-center justify-center gap-3 py-16 text-sm text-neutral-500">
+            <svg
+              className="h-8 w-8 animate-spin text-blue-600"
+              viewBox="0 0 24 24"
+              fill="none"
+              aria-hidden="true"
+            >
+              <circle
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                strokeWidth="3"
+                className="opacity-25"
+              />
+              <path
+                d="M22 12a10 10 0 0 1-10 10"
+                stroke="currentColor"
+                strokeWidth="3"
+                strokeLinecap="round"
+              />
+            </svg>
+            <span>Loading inventory…</span>
+          </div>
+        ) : null}
 
         {pull || pullError ? (
           <div className="mb-3">
@@ -475,6 +580,9 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
                 </div>
                 {items.length > 0 ? (
                   <div>
+                    <div className="mb-3">
+                      <Pagination />
+                    </div>
                     {/* Desktop / tablet: data table */}
                     <div className="hidden overflow-x-auto md:block">
                       <table className="w-full text-left text-sm">
@@ -487,7 +595,6 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
                             <SortHeader col="quantity" label="Qty" />
                             <SortHeader col="quantitySold" label="Sold" />
                             <SortHeader col="price" label="Price" />
-                            <th className="px-2 py-1">Bids</th>
                             <SortHeader col="listingStatus" label="Status" />
                             <SortHeader col="primaryCategoryName" label="Category" />
                             <SortHeader col="listingType" label="Type" />
@@ -496,7 +603,6 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
                         <tbody>
                           {displayedItems.map((it) => {
                             const isSelected = rememberedItemId === it.itemId;
-                            const bids = offersByItemId.get(it.itemId);
                             const ev = latestEventByItemId.get(it.itemId);
                             const evs = eventsByItemId.get(it.itemId);
                             return (
@@ -559,30 +665,9 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
                                 <td className="px-2 py-1 font-mono text-xs">{it.sku}</td>
                                 <td className="px-2 py-1">{it.quantity}</td>
                                 <td className="px-2 py-1">{it.quantitySold}</td>
-                                <td className="px-2 py-1">
-                                  {it.price} {it.currency}
-                                </td>
+                                <td className="px-2 py-1">{formatPrice(it.price, it.currency)}</td>
                                 <td className="px-2 py-1 text-xs">
-                                  {bids && bids.length > 0 ? (
-                                    <ul className="space-y-0.5">
-                                      {bids.map((b) => (
-                                        <li key={b.bestOfferId}>
-                                          <span className="font-medium">
-                                            {b.offerPrice} {b.currency}
-                                          </span>{" "}
-                                          <span className="text-neutral-500">
-                                            × {b.quantity} · {b.buyerUserId || "—"} ·{" "}
-                                            {formatExpiration(b.expirationTime)}
-                                          </span>
-                                        </li>
-                                      ))}
-                                    </ul>
-                                  ) : (
-                                    <span className="text-neutral-400">—</span>
-                                  )}
-                                </td>
-                                <td className="px-2 py-1 text-xs">
-                                  {bids || ev ? (
+                                  {ev ? (
                                     <span className="inline-flex items-center gap-1">
                                       <span className="rounded-full bg-amber-100 px-1.5 py-0.5 font-medium text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
                                         Bidded
@@ -614,9 +699,17 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
                                     isSelected ? "bg-blue-50 dark:bg-blue-950/30" : ""
                                   }`}
                                 >
-                                  <td colSpan={11} className="px-2 pb-2 pt-0">
-                                    <div className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] dark:border-amber-900/40 dark:bg-amber-950/20">
-                                      <ul className="space-y-0.5">
+                                  <td colSpan={10} className="px-2 pb-2 pt-0">
+                                    <div className="flex items-center gap-3 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] dark:border-amber-900/40 dark:bg-amber-950/20">
+                                      <button
+                                        type="button"
+                                        onClick={() => openInCounterBid(it.itemId)}
+                                        title="Open in Counter-bid engine to accept / decline / counter"
+                                        className="flex-shrink-0 rounded-md bg-amber-500 px-2 py-1 text-[11px] font-semibold text-white hover:bg-amber-600"
+                                      >
+                                        Take action →
+                                      </button>
+                                      <ul className="flex-1 space-y-0.5">
                                         {evs.map((e) => (
                                           <li
                                             key={e.id}
@@ -660,7 +753,6 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
                     <ul className="space-y-3 md:hidden">
                       {displayedItems.map((it) => {
                         const isSelected = rememberedItemId === it.itemId;
-                        const bids = offersByItemId.get(it.itemId);
                         const ev = latestEventByItemId.get(it.itemId);
                         const evs = eventsByItemId.get(it.itemId);
                         return (
@@ -702,8 +794,16 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
                                   </button>
                                 </div>
                                 {evs && evs.length > 0 && (
-                                  <div className="mb-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] dark:border-amber-900/40 dark:bg-amber-950/20">
-                                    <ul className="space-y-0.5">
+                                  <div className="mb-2 flex items-center gap-3 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] dark:border-amber-900/40 dark:bg-amber-950/20">
+                                    <button
+                                      type="button"
+                                      onClick={() => openInCounterBid(it.itemId)}
+                                      title="Open in Counter-bid engine to accept / decline / counter"
+                                      className="flex-shrink-0 rounded-md bg-amber-500 px-2 py-1 text-[11px] font-semibold text-white hover:bg-amber-600"
+                                    >
+                                      Take action →
+                                    </button>
+                                    <ul className="flex-1 space-y-0.5">
                                       {evs.map((e) => (
                                         <li
                                           key={e.id}
@@ -758,12 +858,10 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
                                     {it.quantity} / {it.quantitySold}
                                   </dd>
                                   <dt className="text-neutral-500">Price</dt>
-                                  <dd>
-                                    {it.price} {it.currency}
-                                  </dd>
+                                  <dd>{formatPrice(it.price, it.currency)}</dd>
                                   <dt className="text-neutral-500">Status</dt>
                                   <dd>
-                                    {bids || ev ? (
+                                    {ev ? (
                                       <span className="inline-flex items-center gap-1">
                                         <span className="rounded-full bg-amber-100 px-1.5 py-0.5 font-medium text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
                                           Bidded
@@ -794,30 +892,6 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
                                   )}
                                   <dt className="text-neutral-500">Type</dt>
                                   <dd>{it.listingType}</dd>
-                                  {bids && bids.length > 0 && (
-                                    <>
-                                      <dt className="text-neutral-500">Bids</dt>
-                                      <dd>
-                                        <ul className="space-y-0.5">
-                                          {bids.map((b) => (
-                                            <li key={b.bestOfferId}>
-                                              <span className="font-medium">
-                                                {b.offerPrice} {b.currency}
-                                              </span>{" "}
-                                              × {b.quantity} ·{" "}
-                                              <span className="font-mono">
-                                                {b.buyerUserId || "—"}
-                                              </span>{" "}
-                                              ·{" "}
-                                              <span className="text-neutral-500">
-                                                {formatExpiration(b.expirationTime)}
-                                              </span>
-                                            </li>
-                                          ))}
-                                        </ul>
-                                      </dd>
-                                    </>
-                                  )}
                                 </dl>
                               </div>
                             </div>
@@ -826,32 +900,8 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
                       })}
                     </ul>
 
-                    <div className="mt-3 flex items-center justify-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                        disabled={currentPage <= 1}
-                        className="rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-100 disabled:opacity-40 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800"
-                      >
-                        ← Prev
-                      </button>
-                      <span className="text-xs text-neutral-500">
-                        Page <strong className="text-neutral-700 dark:text-neutral-200">{currentPage}</strong>{" "}
-                        of {totalPagesClient}
-                        {prefetching && (
-                          <span className="ml-2 text-neutral-400">
-                            (loading {sortedItems.length}/{pull?.totalEntries ?? "?"}…)
-                          </span>
-                        )}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setCurrentPage((p) => Math.min(totalPagesClient, p + 1))}
-                        disabled={currentPage >= totalPagesClient}
-                        className="rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-100 disabled:opacity-40 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800"
-                      >
-                        Next →
-                      </button>
+                    <div className="mt-3">
+                      <Pagination />
                     </div>
                   </div>
                 ) : (
