@@ -57,6 +57,7 @@ export interface ShopifyProduct {
   created_at: string;
   price: string;
   compareAtPrice?: string;
+  cost?: string;
 }
 
 export interface ShopifyCatalogResult {

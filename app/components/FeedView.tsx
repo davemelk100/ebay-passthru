@@ -14,7 +14,8 @@ import type {
   SubscriptionsResult,
 } from "@/lib/types";
 
-const PAGE_SIZE = 10; // client-side display page size
+const DEFAULT_PAGE_SIZE = 10;
+const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 const FETCH_PAGE_SIZE = 200; // server-side fetch page size (eBay max for GetSellerList)
 const PREFETCH_CONCURRENCY = 4;
 const CACHE_KEY_PREFIX = "ebay-inventory-v1";
@@ -154,6 +155,7 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
   // ---------- Inventory pull ----------
   // Client-side pagination over the accumulated items array.
   const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE);
   const [prefetching, setPrefetching] = useState(false);
   // Bumped on each load cycle so an in-flight prefetch can cancel cleanly when
   // includeEnded flips or a manual refresh is triggered.
@@ -323,10 +325,10 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
     });
   }, [items, latestEventByItemId, sortColumn, sortDir]);
 
-  const totalPagesClient = Math.max(1, Math.ceil(sortedItems.length / PAGE_SIZE));
+  const totalPagesClient = Math.max(1, Math.ceil(sortedItems.length / pageSize));
   const displayedItems = useMemo(
-    () => sortedItems.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE),
-    [sortedItems, currentPage],
+    () => sortedItems.slice((currentPage - 1) * pageSize, currentPage * pageSize),
+    [sortedItems, currentPage, pageSize],
   );
 
   // ---------- Webhook live-events poll (15s) ----------
@@ -440,7 +442,24 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
 
   function Pagination() {
     return (
-      <div className="flex items-center justify-center gap-2">
+      <div className="flex flex-wrap items-center justify-center gap-2">
+        <label className="inline-flex items-center gap-1 text-xs text-neutral-500">
+          <span>Rows:</span>
+          <select
+            value={pageSize}
+            onChange={(e) => {
+              setPageSize(Number(e.target.value));
+              setCurrentPage(1);
+            }}
+            className="rounded-md border border-neutral-300 bg-white px-1.5 py-0.5 text-xs dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200"
+          >
+            {PAGE_SIZE_OPTIONS.map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
+        </label>
         <button
           type="button"
           onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
@@ -527,7 +546,7 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
 
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <p className="text-xs text-neutral-500">
-            Auto-loaded ({PAGE_SIZE} per page) — items with recent activity float to the top.
+            Auto-loaded ({pageSize} per page) — items with recent activity float to the top.
             {events.length > 0 && (
               <span className="ml-1 text-neutral-400">
                 · {events.length} live event{events.length === 1 ? "" : "s"} buffered (
@@ -613,8 +632,8 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
                   </span>
                   <span>·</span>
                   <span>
-                    Showing {(currentPage - 1) * PAGE_SIZE + 1}–
-                    {Math.min(currentPage * PAGE_SIZE, sortedItems.length)} of {sortedItems.length}
+                    Showing {(currentPage - 1) * pageSize + 1}–
+                    {Math.min(currentPage * pageSize, sortedItems.length)} of {sortedItems.length}
                   </span>
                   {sortColumn && (
                     <>
@@ -646,7 +665,8 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
                             <SortHeader col="sku" label="SKU" />
                             <SortHeader col="price" label="eBay list price" />
                             <th className="px-2 py-1">Shopify created</th>
-                            <th className="px-2 py-1">Shopify price</th>
+                            <th className="px-2 py-1">Shopify sticker</th>
+                            <th className="px-2 py-1">Shopify cost</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -688,6 +708,9 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
                                 <td className="px-2 py-1">
                                   {sp ? formatPrice(sp.price, "USD") : <span className="text-neutral-400">—</span>}
                                 </td>
+                                <td className="px-2 py-1">
+                                  {sp?.cost ? formatPrice(sp.cost, "USD") : <span className="text-neutral-400">—</span>}
+                                </td>
                               </tr>
                               {evs && evs.length > 0 && (
                                 <tr
@@ -695,7 +718,7 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
                                     isSelected ? "bg-blue-50 dark:bg-blue-950/30" : ""
                                   }`}
                                 >
-                                  <td colSpan={5} className="px-2 pb-2 pt-0">
+                                  <td colSpan={6} className="px-2 pb-2 pt-0">
                                     <div className="flex items-center gap-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm dark:border-amber-900/40 dark:bg-amber-950/20">
                                       <button
                                         type="button"
@@ -763,18 +786,7 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
                                 : ""
                             }`}
                           >
-                            <div className="flex items-start gap-3">
-                              {it.pictureUrls?.[0] ? (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img
-                                  src={it.pictureUrls[0]}
-                                  alt=""
-                                  loading="lazy"
-                                  className="w-28 flex-shrink-0 rounded object-contain"
-                                />
-                              ) : (
-                                <div className="aspect-square w-28 flex-shrink-0 rounded bg-neutral-100 dark:bg-neutral-800" />
-                              )}
+                            <div>
                               <div className="min-w-0 flex-1">
                                 <p className="mb-2 text-sm font-medium text-neutral-800 dark:text-neutral-100">
                                   {it.viewItemUrl ? (
@@ -848,10 +860,18 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
                                       <span className="text-neutral-400">—</span>
                                     )}
                                   </dd>
-                                  <dt className="text-neutral-500">Shopify price</dt>
+                                  <dt className="text-neutral-500">Shopify sticker</dt>
                                   <dd>
                                     {sp ? (
                                       formatPrice(sp.price, "USD")
+                                    ) : (
+                                      <span className="text-neutral-400">—</span>
+                                    )}
+                                  </dd>
+                                  <dt className="text-neutral-500">Shopify cost</dt>
+                                  <dd>
+                                    {sp?.cost ? (
+                                      formatPrice(sp.cost, "USD")
                                     ) : (
                                       <span className="text-neutral-400">—</span>
                                     )}
