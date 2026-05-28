@@ -55,40 +55,47 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
   }
 
   return (
-    <section className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900">
-      <header className="mb-3 flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Inventory (GetSellerList)</h2>
-        <div className="flex items-center gap-2">
-          <label className="inline-flex cursor-pointer select-none items-center gap-2">
-            <span className="text-xs text-neutral-500">include ended/sold</span>
-            <input
-              type="checkbox"
-              checked={includeEnded}
-              onChange={(e) => setIncludeEnded(e.target.checked)}
-              disabled={pullLoading}
-              className="peer sr-only"
-            />
-            <span className="relative h-5 w-9 rounded-full bg-neutral-300 transition-colors after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:shadow after:transition-transform after:content-[''] peer-checked:bg-blue-600 peer-checked:after:translate-x-4 peer-disabled:opacity-50 dark:bg-neutral-700" />
-          </label>
-          <button
-            type="button"
-            onClick={() => pullFirst()}
+    <details open className="group rounded-lg border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
+      <summary className="flex cursor-pointer list-none items-center justify-between p-4 [&::-webkit-details-marker]:hidden">
+        <span className="flex items-center gap-2">
+          <span className="text-2xl leading-none text-neutral-500 transition-transform group-open:rotate-90">▸</span>
+          <h2 className="text-lg font-semibold">Inventory (GetSellerList)</h2>
+        </span>
+        <span className="text-xs text-neutral-500">
+          {pull?.totalEntries !== undefined ? `${items.length} / ${pull.totalEntries}` : ""}
+        </span>
+      </summary>
+      <div className="border-t border-neutral-200 p-4 dark:border-neutral-800">
+      <div className="mb-3 flex items-center justify-end gap-2">
+        <label className="inline-flex cursor-pointer select-none items-center gap-2">
+          <span className="text-xs text-neutral-500">include ended/sold</span>
+          <input
+            type="checkbox"
+            checked={includeEnded}
+            onChange={(e) => setIncludeEnded(e.target.checked)}
             disabled={pullLoading}
-            className="rounded-md bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-neutral-700 disabled:opacity-60 dark:bg-neutral-100 dark:text-neutral-900"
-          >
-            {pullLoading && items.length === 0 ? "Pulling…" : "Pull inventory"}
-          </button>
-          <button
-            type="button"
-            onClick={clearView}
-            disabled={pullLoading || (items.length === 0 && pull === null)}
-            title="Clears the on-screen table only — does not touch eBay."
-            className="rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-100 disabled:opacity-60 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800"
-          >
-            Clear view
-          </button>
-        </div>
-      </header>
+            className="peer sr-only"
+          />
+          <span className="relative h-5 w-9 rounded-full bg-neutral-300 transition-colors after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:shadow after:transition-transform after:content-[''] peer-checked:bg-blue-600 peer-checked:after:translate-x-4 peer-disabled:opacity-50 dark:bg-neutral-700" />
+        </label>
+        <button
+          type="button"
+          onClick={() => pullFirst()}
+          disabled={pullLoading}
+          className="rounded-md bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-neutral-700 disabled:opacity-60 dark:bg-neutral-100 dark:text-neutral-900"
+        >
+          {pullLoading && items.length === 0 ? "Pulling…" : "Pull inventory"}
+        </button>
+        <button
+          type="button"
+          onClick={clearView}
+          disabled={pullLoading || (items.length === 0 && pull === null)}
+          title="Clears the on-screen table only — does not touch eBay."
+          className="rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-100 disabled:opacity-60 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800"
+        >
+          Clear view
+        </button>
+      </div>
 
       {pull || pullError ? (
         <div className="mb-3">
@@ -223,6 +230,7 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
           Click &ldquo;Pull inventory&rdquo; to fetch the first {PAGE_SIZE} active listings. Use &ldquo;Load more&rdquo; to bring in additional pages.
         </p>
       )}
-    </section>
+      </div>
+    </details>
   );
 }
