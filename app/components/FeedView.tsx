@@ -3,11 +3,14 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRememberedItemId } from "./useRememberedItemId";
 import { useApiCall } from "./useApiCall";
+import CounterBidPanel from "./CounterBidPanel";
 import type {
   InventoryItem,
   InventoryResult,
   NotificationEvent,
   RecentNotificationsResult,
+  ShopifyCatalogResult,
+  ShopifyProduct,
   SubscriptionsResult,
 } from "@/lib/types";
 
@@ -78,6 +81,30 @@ function formatTimeAgo(iso: string): string {
   return `${Math.round(diff / 86_400_000)}d ago`;
 }
 
+function formatDate(iso: string): string {
+  if (!iso) return "—";
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return iso;
+  return new Date(t).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function formatDateTime(iso: string): string {
+  if (!iso) return "—";
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return iso;
+  return new Date(t).toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 // Module-level cache of Intl.NumberFormat instances. Constructing the
 // formatter is the expensive part — reusing it per currency code makes the
 // table's price column render essentially free.
@@ -103,8 +130,7 @@ function formatPrice(price: string, currency: string): string {
   return fmt.format(n);
 }
 
-export default function FeedView(_props: { env: "sandbox" | "production" }) {
-  void _props;
+export default function FeedView({ env }: { env: "sandbox" | "production" }) {
   const {
     data: pull,
     error: pullError,
@@ -120,6 +146,8 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
   const [notifPermission, setNotifPermission] = useState<NotificationPermission | "unsupported">(
     "default",
   );
+  const [shopify, setShopify] = useState<Record<string, ShopifyProduct>>({});
+  const [counterBidOpen, setCounterBidOpen] = useState(false);
   const seenEventIds = useRef<Set<string>>(new Set());
   const firstPollDone = useRef(false);
 
@@ -249,7 +277,8 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
     | "price"
     | "listingStatus"
     | "primaryCategoryName"
-    | "listingType";
+    | "listingType"
+    | "startTime";
   const [sortColumn, setSortColumn] = useState<SortColumn | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
@@ -366,22 +395,46 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
     setNotifPermission(Notification.permission);
   }, []);
 
+  // One-shot Shopify public catalog pull on mount. Server-cached in Upstash
+  // for 24h so this is cheap; failure mode is "no Shopify columns populate"
+  // which is graceful — the rest of the view is unaffected.
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/shopify/catalog", { cache: "no-store" })
+      .then((r) => r.json() as Promise<ShopifyCatalogResult>)
+      .then((json) => {
+        if (!cancelled && json.ok && json.map) setShopify(json.map);
+      })
+      .catch(() => {
+        /* network blip — leave map empty */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   async function enableNotifications() {
     if (typeof Notification === "undefined") return;
     const result = await Notification.requestPermission();
     setNotifPermission(result);
   }
 
-  // Stamp the ItemID into the shared hook (so the Counter-bid panel picks it
-  // up via useRememberedItemId) and scroll to that section so the seller can
-  // immediately Accept / Decline / Counter the live offer.
+  // Stamp the ItemID into the shared hook (so the Counter-bid panel — rendered
+  // inside the modal — picks it up via useRememberedItemId) and open the modal.
   function openInCounterBid(itemId: string) {
     setRememberedItemId(itemId);
-    if (typeof window !== "undefined") {
-      const target = document.getElementById("counter-bid");
-      target?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
+    setCounterBidOpen(true);
   }
+
+  // ESC key closes the modal — standard expectation.
+  useEffect(() => {
+    if (!counterBidOpen) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setCounterBidOpen(false);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [counterBidOpen]);
 
   const events: NotificationEvent[] = recent?.events ?? [];
 
@@ -454,6 +507,7 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
   }
 
   return (
+    <>
     <details open className="group rounded-lg border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
       <summary className="flex cursor-pointer list-none items-center justify-between p-4 [&::-webkit-details-marker]:hidden">
         <h2 className="text-lg font-semibold">Listings & bids</h2>
@@ -588,30 +642,28 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
                       <table className="w-full text-left text-sm">
                         <thead className="text-xs uppercase text-neutral-500">
                           <tr>
-                            <SortHeader col="itemId" label="ItemID" />
-                            <SortHeader col="title" label="Title" />
+                            <SortHeader col="title" label="Listing title" />
                             <SortHeader col="sku" label="SKU" />
-                            <SortHeader col="quantity" label="Qty" />
-                            <SortHeader col="quantitySold" label="Sold" />
-                            <SortHeader col="price" label="Price" />
-                            <SortHeader col="listingStatus" label="Status" />
-                            <SortHeader col="primaryCategoryName" label="Category" />
-                            <SortHeader col="listingType" label="Type" />
+                            <SortHeader col="price" label="eBay list price" />
+                            <th className="px-2 py-1">Shopify created</th>
+                            <th className="px-2 py-1">Shopify price</th>
                           </tr>
                         </thead>
                         <tbody>
                           {displayedItems.map((it) => {
                             const isSelected = rememberedItemId === it.itemId;
-                            const ev = latestEventByItemId.get(it.itemId);
                             const evs = eventsByItemId.get(it.itemId);
+                            const sp = shopify[it.sku];
                             return (
                               <Fragment key={it.itemId}>
                               <tr
                                 className={`border-t border-neutral-100 dark:border-neutral-800 ${
-                                  isSelected ? "bg-blue-50 dark:bg-blue-950/30" : ""
+                                  isSelected
+                                    ? "bg-blue-50 shadow-[0_0_10px_2px_rgba(96,165,250,0.45)] dark:bg-blue-950/30 dark:shadow-[0_0_10px_2px_rgba(96,165,250,0.35)]"
+                                    : ""
                                 }`}
                               >
-                                <td className="px-2 py-1 font-mono text-xs">
+                                <td className="px-2 py-1">
                                   {it.viewItemUrl ? (
                                     <a
                                       href={it.viewItemUrl}
@@ -619,58 +671,23 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
                                       rel="noreferrer"
                                       className="text-blue-600 hover:underline"
                                     >
-                                      {it.itemId}
+                                      {it.title}
                                     </a>
                                   ) : (
-                                    it.itemId
+                                    it.title
                                   )}
+                                </td>
+                                <td className="px-2 py-1 font-mono text-sm">{it.sku}</td>
+                                <td className="px-2 py-1">{formatPrice(it.price, it.currency)}</td>
+                                <td
+                                  className="px-2 py-1 text-xs"
+                                  title={sp ? formatDateTime(sp.created_at) : undefined}
+                                >
+                                  {sp ? formatDate(sp.created_at) : <span className="text-neutral-400">—</span>}
                                 </td>
                                 <td className="px-2 py-1">
-                                  <div>{it.title}</div>
-                                  {ev && (
-                                    <div className="mt-0.5 text-[11px]">
-                                      <span className="rounded-full bg-amber-100 px-1.5 py-0.5 font-medium text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
-                                        🔔 {ev.eventName}
-                                      </span>
-                                      <span className="ml-1 text-neutral-500">
-                                        {formatTimeAgo(ev.timestamp)}
-                                        {ev.offerPrice !== undefined &&
-                                          ` · ${ev.offerPrice} ${ev.currency || ""}`}
-                                        {ev.buyerUserId && ` · ${ev.buyerUserId}`}
-                                      </span>
-                                    </div>
-                                  )}
+                                  {sp ? formatPrice(sp.price, "USD") : <span className="text-neutral-400">—</span>}
                                 </td>
-                                <td className="px-2 py-1 font-mono text-xs">{it.sku}</td>
-                                <td className="px-2 py-1">{it.quantity}</td>
-                                <td className="px-2 py-1">{it.quantitySold}</td>
-                                <td className="px-2 py-1">{formatPrice(it.price, it.currency)}</td>
-                                <td className="px-2 py-1 text-xs">
-                                  {ev ? (
-                                    <span className="inline-flex items-center gap-1">
-                                      <span className="rounded-full bg-amber-100 px-1.5 py-0.5 font-medium text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
-                                        Bidded
-                                      </span>
-                                      <span className="text-neutral-400">
-                                        {it.listingStatus || ""}
-                                      </span>
-                                    </span>
-                                  ) : (
-                                    <span
-                                      className={
-                                        it.listingStatus === "Active"
-                                          ? "text-green-700 dark:text-green-400"
-                                          : "text-neutral-500"
-                                      }
-                                    >
-                                      {it.listingStatus || "—"}
-                                    </span>
-                                  )}
-                                </td>
-                                <td className="px-2 py-1 text-xs text-neutral-500">
-                                  {it.primaryCategoryName || it.primaryCategoryId}
-                                </td>
-                                <td className="px-2 py-1">{it.listingType}</td>
                               </tr>
                               {evs && evs.length > 0 && (
                                 <tr
@@ -678,7 +695,7 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
                                     isSelected ? "bg-blue-50 dark:bg-blue-950/30" : ""
                                   }`}
                                 >
-                                  <td colSpan={9} className="px-2 pb-2 pt-0">
+                                  <td colSpan={5} className="px-2 pb-2 pt-0">
                                     <div className="flex items-center gap-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm dark:border-amber-900/40 dark:bg-amber-950/20">
                                       <button
                                         type="button"
@@ -694,7 +711,10 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
                                             key={e.id}
                                             className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5"
                                           >
-                                            <span className="font-mono text-neutral-500">
+                                            <span
+                                              className="font-mono text-neutral-500"
+                                              title={formatDateTime(e.timestamp)}
+                                            >
                                               {formatTimeAgo(e.timestamp)}
                                             </span>
                                             <strong className="text-amber-800 dark:text-amber-300">
@@ -732,13 +752,15 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
                     <ul className="space-y-3 md:hidden">
                       {displayedItems.map((it) => {
                         const isSelected = rememberedItemId === it.itemId;
-                        const ev = latestEventByItemId.get(it.itemId);
                         const evs = eventsByItemId.get(it.itemId);
+                        const sp = shopify[it.sku];
                         return (
                           <li
                             key={it.itemId}
                             className={`rounded-md border border-neutral-200 p-3 text-xs dark:border-neutral-800 ${
-                              isSelected ? "bg-blue-50 dark:bg-blue-950/30" : ""
+                              isSelected
+                                ? "bg-blue-50 shadow-[0_0_10px_2px_rgba(96,165,250,0.45)] dark:bg-blue-950/30 dark:shadow-[0_0_10px_2px_rgba(96,165,250,0.35)]"
+                                : ""
                             }`}
                           >
                             <div className="flex items-start gap-3">
@@ -755,7 +777,18 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
                               )}
                               <div className="min-w-0 flex-1">
                                 <p className="mb-2 text-sm font-medium text-neutral-800 dark:text-neutral-100">
-                                  {it.title}
+                                  {it.viewItemUrl ? (
+                                    <a
+                                      href={it.viewItemUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="text-blue-600 hover:underline"
+                                    >
+                                      {it.title}
+                                    </a>
+                                  ) : (
+                                    it.title
+                                  )}
                                 </p>
                                 {evs && evs.length > 0 && (
                                   <div className="mb-2 flex items-center gap-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm dark:border-amber-900/40 dark:bg-amber-950/20">
@@ -773,7 +806,10 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
                                           key={e.id}
                                           className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5"
                                         >
-                                          <span className="font-mono text-neutral-500">
+                                          <span
+                                            className="font-mono text-neutral-500"
+                                            title={formatDateTime(e.timestamp)}
+                                          >
                                             {formatTimeAgo(e.timestamp)}
                                           </span>
                                           <strong className="text-amber-800 dark:text-amber-300">
@@ -796,66 +832,30 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
                                   </div>
                                 )}
                                 <dl className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1">
-                                  <dt className="text-neutral-500">ItemID</dt>
-                                  <dd className="font-mono">
-                                    {it.viewItemUrl ? (
-                                      <a
-                                        href={it.viewItemUrl}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="text-blue-600 hover:underline"
-                                      >
-                                        {it.itemId}
-                                      </a>
-                                    ) : (
-                                      it.itemId
-                                    )}
-                                  </dd>
                                   {it.sku && (
                                     <>
                                       <dt className="text-neutral-500">SKU</dt>
-                                      <dd className="font-mono">{it.sku}</dd>
+                                      <dd className="font-mono text-sm">{it.sku}</dd>
                                     </>
                                   )}
-                                  <dt className="text-neutral-500">Qty / Sold</dt>
-                                  <dd>
-                                    {it.quantity} / {it.quantitySold}
-                                  </dd>
-                                  <dt className="text-neutral-500">Price</dt>
+                                  <dt className="text-neutral-500">eBay list price</dt>
                                   <dd>{formatPrice(it.price, it.currency)}</dd>
-                                  <dt className="text-neutral-500">Status</dt>
-                                  <dd>
-                                    {ev ? (
-                                      <span className="inline-flex items-center gap-1">
-                                        <span className="rounded-full bg-amber-100 px-1.5 py-0.5 font-medium text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
-                                          Bidded
-                                        </span>
-                                        <span className="text-neutral-400">
-                                          {it.listingStatus || ""}
-                                        </span>
-                                      </span>
+                                  <dt className="text-neutral-500">Shopify created</dt>
+                                  <dd title={sp ? formatDateTime(sp.created_at) : undefined}>
+                                    {sp ? (
+                                      formatDate(sp.created_at)
                                     ) : (
-                                      <span
-                                        className={
-                                          it.listingStatus === "Active"
-                                            ? "text-green-700 dark:text-green-400"
-                                            : "text-neutral-500"
-                                        }
-                                      >
-                                        {it.listingStatus || "—"}
-                                      </span>
+                                      <span className="text-neutral-400">—</span>
                                     )}
                                   </dd>
-                                  {(it.primaryCategoryName || it.primaryCategoryId) && (
-                                    <>
-                                      <dt className="text-neutral-500">Category</dt>
-                                      <dd className="text-neutral-500">
-                                        {it.primaryCategoryName || it.primaryCategoryId}
-                                      </dd>
-                                    </>
-                                  )}
-                                  <dt className="text-neutral-500">Type</dt>
-                                  <dd>{it.listingType}</dd>
+                                  <dt className="text-neutral-500">Shopify price</dt>
+                                  <dd>
+                                    {sp ? (
+                                      formatPrice(sp.price, "USD")
+                                    ) : (
+                                      <span className="text-neutral-400">—</span>
+                                    )}
+                                  </dd>
                                 </dl>
                               </div>
                             </div>
@@ -877,5 +877,29 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
         ) : null}
       </div>
     </details>
+    {counterBidOpen && (
+      <div
+        className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-4 backdrop-blur-sm"
+        onClick={() => setCounterBidOpen(false)}
+        role="dialog"
+        aria-modal="true"
+      >
+        <div
+          className="relative my-8 w-full max-w-5xl"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            type="button"
+            onClick={() => setCounterBidOpen(false)}
+            aria-label="Close"
+            className="absolute -right-2 -top-2 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-white text-xl font-medium text-neutral-700 shadow-lg hover:bg-neutral-100 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
+          >
+            ×
+          </button>
+          <CounterBidPanel env={env} />
+        </div>
+      </div>
+    )}
+    </>
   );
 }

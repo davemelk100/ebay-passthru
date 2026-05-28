@@ -1,7 +1,5 @@
-import CounterBidPanel from "./components/CounterBidPanel";
 // import CrudCheck from "./components/CrudCheck"; // Disabled — runs AddItem / EndItem.
 import FeedView from "./components/FeedView";
-import LeftNav from "./components/LeftNav";
 import { readConfig } from "@/lib/ebay";
 
 export const dynamic = "force-dynamic";
@@ -10,8 +8,7 @@ export default function Home() {
   const cfg = readConfig();
 
   return (
-    <main className="px-6 py-10 lg:pl-56 lg:pr-8">
-      <LeftNav />
+    <main className="px-6 py-10 lg:px-8">
       <header className="mb-8">
         <h1 className="text-3xl font-bold">eBay Inventory Sync</h1>
       </header>
@@ -19,9 +16,6 @@ export default function Home() {
       <div className="min-w-0 space-y-6">
           <section id="inventory" className="scroll-mt-6">
             <FeedView env={cfg.env} />
-          </section>
-          <section id="counter-bid" className="scroll-mt-6">
-            <CounterBidPanel env={cfg.env} />
           </section>
           {/* <CrudCheck /> */}
 

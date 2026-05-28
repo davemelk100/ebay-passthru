@@ -45,6 +45,31 @@ export interface InventoryResult {
   missing?: string[];
 }
 
+// ---------- Shopify public catalog ----------
+// Pulled from <shop>.myshopify.com/products.json (no auth). Joined by SKU
+// against the eBay inventory so each row can show when the product was
+// created in Shopify and what its current displayed price is.
+
+export interface ShopifyProduct {
+  sku: string;
+  handle: string;
+  title: string;
+  created_at: string;
+  price: string;
+  compareAtPrice?: string;
+}
+
+export interface ShopifyCatalogResult {
+  ok: boolean;
+  error?: string;
+  hint?: string;
+  map?: Record<string, ShopifyProduct>;
+  productCount?: number;
+  fetchedAt?: string;
+  durationMs?: number;
+  shopDomain?: string;
+}
+
 // ---------- Notification events ----------
 
 // Normalized event produced by /api/webhooks/ebay after parsing the raw
