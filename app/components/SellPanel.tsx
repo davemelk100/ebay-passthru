@@ -45,12 +45,6 @@ const SAMPLES: Sample[] = [
     path: "/sell/account/v1/fulfillment_policy?marketplace_id=EBAY_US",
     hint: "⚠️ Requires Business Policy opt-in (same as PaymentPolicies above). Returns 20403 otherwise.",
   },
-  {
-    label: "Orders",
-    method: "GET",
-    path: "/sell/fulfillment/v1/order?limit=20",
-    hint: "Recent orders for this seller.",
-  },
 ];
 
 export default function SellPanel({ env }: { env: "sandbox" | "production" }) {
