@@ -30,9 +30,15 @@ const memoryStore: NotificationStore = {
 };
 
 // ----- Upstash Redis -----------------------------------------------------
+// Accept both the canonical Upstash names and the KV_* aliases that the
+// Vercel Marketplace "Upstash for Redis" install provisions.
 
-const UPSTASH_URL = process.env.UPSTASH_REDIS_REST_URL?.trim();
-const UPSTASH_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN?.trim();
+const UPSTASH_URL = (
+  process.env.UPSTASH_REDIS_REST_URL ?? process.env.KV_REST_API_URL
+)?.trim();
+const UPSTASH_TOKEN = (
+  process.env.UPSTASH_REDIS_REST_TOKEN ?? process.env.KV_REST_API_TOKEN
+)?.trim();
 const KEY = "ebay:notifications:recent";
 
 async function upstash(commands: (string | number)[][]): Promise<unknown[]> {
