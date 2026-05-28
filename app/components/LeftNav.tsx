@@ -14,27 +14,42 @@ const ITEMS: NavItem[] = [
   { id: "counter-bid", label: "Counter-bid" },
   { id: "sell-rest", label: "Sell REST" },
   { id: "about", label: "What this app does" },
-  { id: "shopify", label: "Shopify sync" },
 ];
 
 export default function LeftNav() {
   const [activeId, setActiveId] = useState<string>(ITEMS[0].id);
 
   useEffect(() => {
-    // Active = the last section whose top has scrolled above THRESHOLD px from
-    // the viewport top. Monotonic with scroll position, so short sections
-    // (like the About block sitting between Sell REST and Shopify sync) get
-    // a proper active window instead of being skipped by intersection math.
-    const THRESHOLD = 120;
+    // Active = the section whose top has scrolled to or past LINE, but whose
+    // successor has not. With collapsed <details> panels (Active Offers,
+    // Trading API, Sell REST, Shopify sync) clustered tightly against
+    // expanded ones, any "max-below-threshold" approach skips the short
+    // sections because the next section also qualifies. Range containment
+    // gives exactly one winner per scroll position.
+    const LINE = 24; // matches scroll-mt-6 — the offset anchor-jumps land at.
     function pickActive() {
       let best = ITEMS[0].id;
-      for (const it of ITEMS) {
-        const el = document.getElementById(it.id);
+      for (let i = 0; i < ITEMS.length; i++) {
+        const el = document.getElementById(ITEMS[i].id);
         if (!el) continue;
         const top = el.getBoundingClientRect().top;
-        if (top - THRESHOLD <= 0) best = it.id;
-        else break;
+        if (top > LINE) break;
+        const nextEl =
+          i + 1 < ITEMS.length ? document.getElementById(ITEMS[i + 1].id) : null;
+        const nextTop = nextEl
+          ? nextEl.getBoundingClientRect().top
+          : Number.POSITIVE_INFINITY;
+        if (nextTop > LINE) {
+          best = ITEMS[i].id;
+          break;
+        }
       }
+      // Pin the last item when scrolled to (near) the bottom: with nothing
+      // below it, the last section's top may never reach LINE, so range
+      // containment leaves the previous section perpetually active.
+      const docH = document.documentElement.scrollHeight;
+      const nearBottom = window.scrollY + window.innerHeight >= docH - 40;
+      if (nearBottom) best = ITEMS[ITEMS.length - 1].id;
       setActiveId(best);
     }
     pickActive();
