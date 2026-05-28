@@ -68,7 +68,11 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
         </span>
       </summary>
       <div className="border-t border-neutral-200 p-4 dark:border-neutral-800">
-      <div className="mb-3 flex items-center justify-end gap-2">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-neutral-500">
+          Click &ldquo;Pull inventory&rdquo; to fetch the first {PAGE_SIZE} active listings. Use &ldquo;Load more&rdquo; to bring in additional pages.
+        </p>
+        <div className="flex items-center gap-2">
         <label className="inline-flex cursor-pointer select-none items-center gap-2">
           <span className="text-xs text-neutral-500">include ended/sold</span>
           <input
@@ -97,6 +101,7 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
         >
           Clear view
         </button>
+        </div>
       </div>
 
       {pull || pullError ? (
@@ -210,11 +215,7 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
             </>
           ) : null}
         </div>
-      ) : (
-        <p className="text-xs text-neutral-500">
-          Click &ldquo;Pull inventory&rdquo; to fetch the first {PAGE_SIZE} active listings. Use &ldquo;Load more&rdquo; to bring in additional pages.
-        </p>
-      )}
+      ) : null}
       </div>
     </details>
   );
