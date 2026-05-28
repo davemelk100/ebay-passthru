@@ -1,10 +1,7 @@
-import CallPanel from "./components/CallPanel";
 import CounterBidPanel from "./components/CounterBidPanel";
 // import CrudCheck from "./components/CrudCheck"; // Disabled — runs AddItem / EndItem.
 import FeedView from "./components/FeedView";
 import LeftNav from "./components/LeftNav";
-import OffersPanel from "./components/OffersPanel";
-import SellPanel from "./components/SellPanel";
 import { readConfig } from "@/lib/ebay";
 
 export const dynamic = "force-dynamic";
@@ -14,30 +11,17 @@ export default function Home() {
 
   return (
     <main className="mx-auto max-w-7xl px-6 py-10">
+      <LeftNav />
       <header className="mb-8">
         <h1 className="text-3xl font-bold">eBay Inventory Sync</h1>
       </header>
 
-      <div className="lg:grid lg:grid-cols-[160px_1fr] lg:gap-8">
-        <aside>
-          <LeftNav />
-        </aside>
-
-        <div className="min-w-0 space-y-6">
+      <div className="min-w-0 space-y-6">
           <section id="inventory" className="scroll-mt-6">
             <FeedView env={cfg.env} />
           </section>
-          <section id="offers" className="scroll-mt-6">
-            <OffersPanel />
-          </section>
-          <section id="trading" className="scroll-mt-6">
-            <CallPanel env={cfg.env} />
-          </section>
           <section id="counter-bid" className="scroll-mt-6">
             <CounterBidPanel env={cfg.env} />
-          </section>
-          <section id="sell-rest" className="scroll-mt-6">
-            <SellPanel env={cfg.env} />
           </section>
           {/* <CrudCheck /> */}
 
@@ -159,7 +143,6 @@ export default function Home() {
             </div>
           </section>
         </div>
-      </div>
-    </main>
+      </main>
   );
 }
