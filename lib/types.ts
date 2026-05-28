@@ -92,6 +92,8 @@ export interface SubscriptionsResult {
 export interface ActiveOffer {
   itemId: string;
   title: string;
+  sku: string;
+  listPrice: number;
   viewItemUrl: string;
   pictureUrl: string;
   bestOfferId: string;

@@ -23,6 +23,12 @@ interface RawBestOffer {
 interface RawItemWithOffers {
   ItemID?: string | number;
   Title?: string;
+  SKU?: string | number;
+  StartPrice?: { "#text"?: string | number; "@_currencyID"?: string } | string | number;
+  BuyItNowPrice?: { "#text"?: string | number; "@_currencyID"?: string } | string | number;
+  SellingStatus?: {
+    CurrentPrice?: { "#text"?: string | number; "@_currencyID"?: string } | string | number;
+  };
   ListingDetails?: { ViewItemURL?: string };
   PictureDetails?: { PictureURL?: string | string[]; GalleryURL?: string };
 }
@@ -82,6 +88,8 @@ export async function POST() {
   const offers: Array<{
     itemId: string;
     title: string;
+    sku: string;
+    listPrice: number;
     viewItemUrl: string;
     pictureUrl: string;
     bestOfferId: string;
@@ -105,6 +113,13 @@ export async function POST() {
         : pic
       : String(item.PictureDetails?.GalleryURL ?? "");
 
+    // BuyItNowPrice wins for fixed-price listings; StartPrice covers auctions;
+    // SellingStatus.CurrentPrice is the fallback if neither carried through.
+    const listPrice =
+      priceNumber(item.BuyItNowPrice) ||
+      priceNumber(item.StartPrice) ||
+      priceNumber(item.SellingStatus?.CurrentPrice);
+
     const r = await callTradingApi(
       "GetBestOffers",
       `<ItemID>${itemId}</ItemID><BestOfferStatus>Active</BestOfferStatus><DetailLevel>ReturnAll</DetailLevel>`,
@@ -122,6 +137,8 @@ export async function POST() {
       offers.push({
         itemId,
         title: String(item.Title ?? ""),
+        sku: String(item.SKU ?? ""),
+        listPrice,
         viewItemUrl: String(item.ListingDetails?.ViewItemURL ?? ""),
         pictureUrl,
         bestOfferId: String(raw.BestOfferID ?? ""),

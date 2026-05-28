@@ -277,14 +277,10 @@ export default function OffersPanel() {
               <table className="w-full text-left text-sm">
                 <thead className="text-xs uppercase text-neutral-500">
                   <tr>
-                    <th className="px-2 py-1"></th>
-                    <th className="px-2 py-1">Item</th>
+                    <th className="px-2 py-1">Listing title</th>
+                    <th className="px-2 py-1">SKU</th>
+                    <th className="px-2 py-1">List price</th>
                     <th className="px-2 py-1">Offer</th>
-                    <th className="px-2 py-1">Qty</th>
-                    <th className="px-2 py-1">Buyer</th>
-                    <th className="px-2 py-1">Status</th>
-                    <th className="px-2 py-1">Expires in</th>
-                    <th className="px-2 py-1">Message</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -294,43 +290,26 @@ export default function OffersPanel() {
                       className="border-t border-neutral-100 align-top dark:border-neutral-800"
                     >
                       <td className="px-2 py-1">
-                        {o.pictureUrl ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={o.pictureUrl}
-                            alt=""
-                            loading="lazy"
-                            className="h-12 w-12 rounded object-cover"
-                          />
+                        {o.viewItemUrl ? (
+                          <a
+                            href={o.viewItemUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-blue-600 hover:underline"
+                          >
+                            {o.title}
+                          </a>
                         ) : (
-                          <div className="h-12 w-12 rounded bg-neutral-100 dark:bg-neutral-800" />
+                          o.title
                         )}
                       </td>
-                      <td className="px-2 py-1">
-                        <div className="text-sm">{o.title}</div>
-                        <div className="font-mono text-[11px] text-neutral-500">
-                          {o.viewItemUrl ? (
-                            <a
-                              href={o.viewItemUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-blue-600 hover:underline"
-                            >
-                              {o.itemId}
-                            </a>
-                          ) : (
-                            o.itemId
-                          )}
-                        </div>
+                      <td className="px-2 py-1 font-mono text-xs">{o.sku || "—"}</td>
+                      <td className="px-2 py-1 text-xs">
+                        {o.listPrice ? `${o.listPrice} ${o.currency}` : "—"}
                       </td>
                       <td className="px-2 py-1 font-medium">
                         {o.offerPrice} {o.currency}
                       </td>
-                      <td className="px-2 py-1">{o.quantity}</td>
-                      <td className="px-2 py-1 font-mono text-xs">{o.buyerUserId || "—"}</td>
-                      <td className="px-2 py-1 text-xs">{o.status || "—"}</td>
-                      <td className="px-2 py-1 text-xs">{formatExpiration(o.expirationTime)}</td>
-                      <td className="px-2 py-1 text-xs text-neutral-500">{o.message || "—"}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -343,57 +322,40 @@ export default function OffersPanel() {
                   key={o.bestOfferId}
                   className="rounded-md border border-neutral-200 p-3 text-xs dark:border-neutral-800"
                 >
-                  <div className="flex items-start gap-3">
-                    {o.pictureUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={o.pictureUrl}
-                        alt=""
-                        loading="lazy"
-                        className="w-24 flex-shrink-0 rounded object-contain"
-                      />
-                    ) : (
-                      <div className="aspect-square w-24 flex-shrink-0 rounded bg-neutral-100 dark:bg-neutral-800" />
-                    )}
-                    <div className="min-w-0 flex-1">
-                      <p className="mb-2 text-sm font-medium text-neutral-800 dark:text-neutral-100">
+                  <p className="mb-2 text-sm font-medium text-neutral-800 dark:text-neutral-100">
+                    {o.viewItemUrl ? (
+                      <a
+                        href={o.viewItemUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-blue-600 hover:underline"
+                      >
                         {o.title}
-                      </p>
-                      <dl className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1">
-                        <dt className="text-neutral-500">Offer</dt>
-                        <dd className="font-medium">
-                          {o.offerPrice} {o.currency} × {o.quantity}
+                      </a>
+                    ) : (
+                      o.title
+                    )}
+                  </p>
+                  <dl className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1">
+                    {o.sku && (
+                      <>
+                        <dt className="text-neutral-500">SKU</dt>
+                        <dd className="font-mono">{o.sku}</dd>
+                      </>
+                    )}
+                    {o.listPrice > 0 && (
+                      <>
+                        <dt className="text-neutral-500">List price</dt>
+                        <dd>
+                          {o.listPrice} {o.currency}
                         </dd>
-                        <dt className="text-neutral-500">Buyer</dt>
-                        <dd className="font-mono">{o.buyerUserId || "—"}</dd>
-                        <dt className="text-neutral-500">Status</dt>
-                        <dd>{o.status || "—"}</dd>
-                        <dt className="text-neutral-500">Expires</dt>
-                        <dd>{formatExpiration(o.expirationTime)}</dd>
-                        <dt className="text-neutral-500">ItemID</dt>
-                        <dd className="font-mono">
-                          {o.viewItemUrl ? (
-                            <a
-                              href={o.viewItemUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-blue-600 hover:underline"
-                            >
-                              {o.itemId}
-                            </a>
-                          ) : (
-                            o.itemId
-                          )}
-                        </dd>
-                        {o.message && (
-                          <>
-                            <dt className="text-neutral-500">Note</dt>
-                            <dd className="text-neutral-500">{o.message}</dd>
-                          </>
-                        )}
-                      </dl>
-                    </div>
-                  </div>
+                      </>
+                    )}
+                    <dt className="text-neutral-500">Offer</dt>
+                    <dd className="font-medium">
+                      {o.offerPrice} {o.currency}
+                    </dd>
+                  </dl>
                 </li>
               ))}
             </ul>
