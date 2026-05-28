@@ -135,6 +135,7 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
                       <thead className="text-xs uppercase text-neutral-500">
                         <tr>
                           {/* "Use" column hidden — will surface again when more sample bodies consume rememberedItemId. */}
+                          <th className="px-2 py-1"></th>
                           <th className="px-2 py-1">ItemID</th>
                           <th className="px-2 py-1">Title</th>
                           <th className="px-2 py-1">SKU</th>
@@ -157,6 +158,19 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
                               }`}
                             >
                               {/* "Use" cell hidden — see header note. */}
+                              <td className="px-2 py-1">
+                                {it.pictureUrls?.[0] ? (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img
+                                    src={it.pictureUrls[0]}
+                                    alt=""
+                                    loading="lazy"
+                                    className="h-10 w-10 rounded object-cover"
+                                  />
+                                ) : (
+                                  <div className="h-10 w-10 rounded bg-neutral-100 dark:bg-neutral-800" />
+                                )}
+                              </td>
                               <td className="px-2 py-1 font-mono text-xs">
                                 {it.viewItemUrl ? (
                                   <a
@@ -211,9 +225,22 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
                             isSelected ? "bg-blue-50 dark:bg-blue-950/30" : ""
                           }`}
                         >
-                          <p className="mb-2 text-sm font-medium text-neutral-800 dark:text-neutral-100">
-                            {it.title}
-                          </p>
+                          <div className="mb-2 flex items-start gap-3">
+                            {it.pictureUrls?.[0] ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={it.pictureUrls[0]}
+                                alt=""
+                                loading="lazy"
+                                className="h-16 w-16 flex-shrink-0 rounded object-cover"
+                              />
+                            ) : (
+                              <div className="h-16 w-16 flex-shrink-0 rounded bg-neutral-100 dark:bg-neutral-800" />
+                            )}
+                            <p className="text-sm font-medium text-neutral-800 dark:text-neutral-100">
+                              {it.title}
+                            </p>
+                          </div>
                           <dl className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1">
                             <dt className="text-neutral-500">ItemID</dt>
                             <dd className="font-mono">
