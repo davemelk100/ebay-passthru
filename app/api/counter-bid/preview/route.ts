@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { callTradingApi } from "@/lib/ebay";
-import { blockIfProduction, requireEbayConfig } from "@/lib/api-guards";
+import { requireEbayConfig } from "@/lib/api-guards";
 import { asArray, extractArray, getPath } from "@/lib/ebay-xml";
 import {
   evaluateOffer,
@@ -96,14 +96,6 @@ export async function POST(req: Request) {
   const guard = requireEbayConfig({ okFlag: true });
   if (guard.response) return guard.response;
   const { cfg } = guard;
-
-  // Live previews leak pending buyer offer prices + buyer UserIDs. Hard-block in production.
-  const blocked = blockIfProduction(cfg, {
-    blocked: true,
-    error: "Counter-bid preview is disabled in production — exposes pending buyer offers.",
-    okFlag: true,
-  });
-  if (blocked) return blocked;
 
   const ruleFile = await loadRules();
   const comps = Array.isArray(body.comps) ? body.comps.filter((n) => typeof n === "number") : [];

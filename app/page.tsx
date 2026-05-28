@@ -1,5 +1,5 @@
 import CallPanel from "./components/CallPanel";
-// import CounterBidPanel from "./components/CounterBidPanel"; // Disabled — would mutate buyer offers.
+import CounterBidPanel from "./components/CounterBidPanel";
 // import CrudCheck from "./components/CrudCheck"; // Disabled — runs AddItem / EndItem.
 import FeedView from "./components/FeedView";
 import OffersPanel from "./components/OffersPanel";
@@ -21,7 +21,7 @@ export default function Home() {
         <FeedView env={cfg.env} />
         <OffersPanel />
         <CallPanel env={cfg.env} />
-        {/* <CounterBidPanel env={cfg.env} /> */}
+        <CounterBidPanel env={cfg.env} />
         <SellPanel env={cfg.env} />
         {/* <CrudCheck /> */}
       </div>

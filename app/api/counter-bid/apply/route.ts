@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { callTradingApi } from "@/lib/ebay";
-import { blockIfProduction, requireEbayConfig } from "@/lib/api-guards";
+import { requireEbayConfig } from "@/lib/api-guards";
 import type { ApplyDecisionResult } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -38,13 +38,6 @@ export async function POST(req: Request) {
   const guard = requireEbayConfig({ okFlag: true });
   if (guard.response) return guard.response;
   const { cfg } = guard;
-
-  const blocked = blockIfProduction(cfg, {
-    blocked: true,
-    error: "Counter-bid apply is permanently disabled on production.",
-    okFlag: true,
-  });
-  if (blocked) return blocked;
 
   const started = Date.now();
   const results: ApplyDecisionResult[] = [];
