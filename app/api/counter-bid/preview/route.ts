@@ -91,17 +91,13 @@ export async function POST(req: Request) {
   const body = (await req.json().catch(() => ({}))) as {
     itemId?: string;
     comps?: number[];
-    // For unit-testing the engine without hitting Trading API.
-    offers?: OfferContext[];
   };
 
   const guard = requireEbayConfig({ okFlag: true });
   if (guard.response) return guard.response;
   const { cfg } = guard;
 
-  // Live previews leak pending buyer offer prices + buyer UserIDs. Hard-block
-  // in production. Synthetic mode is safe but the route blocks before reading
-  // the body shape, so the whole route is off in prod.
+  // Live previews leak pending buyer offer prices + buyer UserIDs. Hard-block in production.
   const blocked = blockIfProduction(cfg, {
     blocked: true,
     error: "Counter-bid preview is disabled in production — exposes pending buyer offers.",
@@ -112,26 +108,8 @@ export async function POST(req: Request) {
   const ruleFile = await loadRules();
   const comps = Array.isArray(body.comps) ? body.comps.filter((n) => typeof n === "number") : [];
 
-  // Synthetic mode: caller provides offers directly. Lets you preview rules without live offers.
-  if (body.offers && Array.isArray(body.offers)) {
-    const results = body.offers.map((ctx) => ({
-      ...ctx,
-      comps: ctx.comps ?? comps,
-      decision: evaluateOffer(ruleFile.rules, { ...ctx, comps: ctx.comps ?? comps }),
-    }));
-    return NextResponse.json({
-      ok: true,
-      mode: "synthetic",
-      ruleCount: ruleFile.rules.length,
-      results,
-    });
-  }
-
   if (!body.itemId) {
-    return NextResponse.json(
-      { error: "Provide either `itemId` (to fetch offers) or `offers` (synthetic mode)." },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: "Provide `itemId`." }, { status: 400 });
   }
 
   // Pull pending offers + listing price.
@@ -173,7 +151,6 @@ export async function POST(req: Request) {
 
   return NextResponse.json({
     ok: true,
-    mode: "live",
     itemId: body.itemId,
     title: rawItem?.Title,
     listingPrice,

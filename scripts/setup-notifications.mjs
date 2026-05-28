@@ -150,8 +150,7 @@ if (cmd === "status") {
   console.log(`HTTP ${r.status}  Ack: ${r.ack}`);
   if (r.errors.length) console.log("Errors:", r.errors);
   if (r.ack === "Success" || r.ack === "Warning") {
-    console.log(`\n${enable ? "Subscribed" : "Unsubscribed"}. Test it:`);
-    console.log(`  node scripts/test-webhook.mjs`);
+    console.log(`\n${enable ? "Subscribed" : "Unsubscribed"}.`);
   } else {
     console.log("\nFull response:");
     console.log(r.rawXml);

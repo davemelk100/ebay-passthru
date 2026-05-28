@@ -165,9 +165,7 @@ export default function OffersPanel() {
           ) : (
             <p className="text-neutral-500">
               No webhook events received yet. Run{" "}
-              <code className="font-mono">node scripts/setup-notifications.mjs</code> to subscribe,
-              then <code className="font-mono">node scripts/test-webhook.mjs</code> for a synthetic
-              test event.
+              <code className="font-mono">node scripts/setup-notifications.mjs</code> to subscribe.
             </p>
           )}
         </div>

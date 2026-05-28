@@ -176,7 +176,6 @@ export interface PreviewRow extends OfferContext {
 export interface PreviewResponse {
   ok?: boolean;
   error?: string;
-  mode?: string;
   itemId?: string;
   title?: string;
   listingPrice?: number;
