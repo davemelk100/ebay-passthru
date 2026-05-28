@@ -21,24 +21,29 @@ export default function LeftNav() {
   const [activeId, setActiveId] = useState<string>(ITEMS[0].id);
 
   useEffect(() => {
-    const sections = ITEMS.map((it) => document.getElementById(it.id)).filter(
-      (el): el is HTMLElement => el !== null,
-    );
-    if (sections.length === 0) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        // Pick the topmost intersecting section so the highlight follows the
-        // section the user is actually reading, not whichever entry fired last.
-        const visible = entries
-          .filter((e) => e.isIntersecting)
-          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
-        if (visible[0]?.target.id) setActiveId(visible[0].target.id);
-      },
-      { rootMargin: "-20% 0px -60% 0px", threshold: 0 },
-    );
-    for (const s of sections) observer.observe(s);
-    return () => observer.disconnect();
+    // Active = the last section whose top has scrolled above THRESHOLD px from
+    // the viewport top. Monotonic with scroll position, so short sections
+    // (like the About block sitting between Sell REST and Shopify sync) get
+    // a proper active window instead of being skipped by intersection math.
+    const THRESHOLD = 120;
+    function pickActive() {
+      let best = ITEMS[0].id;
+      for (const it of ITEMS) {
+        const el = document.getElementById(it.id);
+        if (!el) continue;
+        const top = el.getBoundingClientRect().top;
+        if (top - THRESHOLD <= 0) best = it.id;
+        else break;
+      }
+      setActiveId(best);
+    }
+    pickActive();
+    window.addEventListener("scroll", pickActive, { passive: true });
+    window.addEventListener("resize", pickActive);
+    return () => {
+      window.removeEventListener("scroll", pickActive);
+      window.removeEventListener("resize", pickActive);
+    };
   }, []);
 
   return (
