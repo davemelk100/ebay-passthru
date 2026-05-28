@@ -2,7 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { useApiCall } from "./useApiCall";
-import type { NotificationEvent, OffersResult, RecentNotificationsResult } from "@/lib/types";
+import type {
+  NotificationEvent,
+  OffersResult,
+  RecentNotificationsResult,
+  SubscriptionsResult,
+} from "@/lib/types";
 
 function formatExpiration(iso: string): string {
   if (!iso) return "—";
@@ -34,6 +39,7 @@ function formatTimeAgo(iso: string): string {
 export default function OffersPanel() {
   const { data, error, loading, run } = useApiCall<OffersResult>();
   const [recent, setRecent] = useState<RecentNotificationsResult | null>(null);
+  const [subs, setSubs] = useState<SubscriptionsResult | null>(null);
 
   async function refresh() {
     await run("/api/offers", {});
@@ -57,6 +63,23 @@ export default function OffersPanel() {
     return () => {
       cancelled = true;
       clearInterval(id);
+    };
+  }, []);
+
+  // One-shot fetch of the current Platform Notification subscriptions so
+  // we can render the active event types as pills.
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/offers/subscriptions", { cache: "no-store" })
+      .then((r) => r.json() as Promise<SubscriptionsResult>)
+      .then((json) => {
+        if (!cancelled) setSubs(json);
+      })
+      .catch(() => {
+        /* keep null */
+      });
+    return () => {
+      cancelled = true;
     };
   }, []);
 
@@ -89,6 +112,34 @@ export default function OffersPanel() {
               </span>
             </span>
           </div>
+          {subs && (
+            <div className="mb-3 flex flex-wrap items-center gap-1.5">
+              <span className="text-[11px] text-neutral-500">
+                {subs.applicationEnabled === false
+                  ? "Webhook delivery is OFF — run "
+                  : "Subscribed to: "}
+              </span>
+              {subs.applicationEnabled === false && (
+                <code className="font-mono text-[11px]">
+                  node scripts/setup-notifications.mjs
+                </code>
+              )}
+              {(subs.enabledEvents ?? []).map((ev) => (
+                <span
+                  key={ev}
+                  className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700 dark:border-blue-900/40 dark:bg-blue-950/30 dark:text-blue-300"
+                  title={`${ev} events POST to ${subs.applicationUrl || "(no URL set)"}`}
+                >
+                  {ev}
+                </span>
+              ))}
+              {subs.applicationEnabled && (subs.enabledEvents ?? []).length === 0 && (
+                <span className="text-[11px] text-amber-600">
+                  Application URL is set but no event types are enabled.
+                </span>
+              )}
+            </div>
+          )}
           {events.length > 0 ? (
             <ul className="space-y-1.5">
               {events.slice(0, 10).map((e) => (

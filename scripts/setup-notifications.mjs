@@ -98,13 +98,17 @@ async function callTrading(callName, innerXml, accessToken) {
 
 // ----- Event types we want to receive ------------------------------------
 
+// Event types verified against this account's Trading API endpoint.
+// Confirmed accepted via individual SetNotificationPreferences probes;
+// BestOfferRemoved / BestOfferAccepted are NOT valid names despite older
+// docs suggesting otherwise.
 const EVENTS = [
   "BestOffer",
   "BestOfferPlaced",
   "BestOfferDeclined",
-  "BestOfferRemoved",
+  "ItemSold",
+  "BidPlaced",
   "AuctionCheckoutComplete",
-  "BidReceived",
 ];
 
 function buildSetPreferencesXml(enable) {
@@ -117,7 +121,7 @@ function buildSetPreferencesXml(enable) {
   <ApplicationEnable>${enable ? "Enable" : "Disable"}</ApplicationEnable>
   <AlertEnable>${enable ? "Enable" : "Disable"}</AlertEnable>
   <DeviceType>Platform</DeviceType>
-  <PayloadVersion>${COMPAT}</PayloadVersion>
+  <PayloadVersion>1173</PayloadVersion>
 </ApplicationDeliveryPreferences>
 <UserDeliveryPreferenceArray>
   ${eventsXml}

@@ -74,6 +74,19 @@ export interface RecentNotificationsResult {
   error?: string;
 }
 
+export interface SubscriptionsResult {
+  ok: boolean;
+  applicationUrl?: string;
+  applicationEnabled?: boolean;
+  deviceType?: string;
+  payloadVersion?: string;
+  enabledEvents?: string[];
+  durationMs?: number;
+  error?: string;
+  errors?: EbayErrorSummary[];
+  missing?: string[];
+}
+
 // ---------- Active offers ----------
 
 export interface ActiveOffer {
