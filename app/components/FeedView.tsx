@@ -1,6 +1,14 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Fragment,
+  startTransition,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useRememberedItemId } from "./useRememberedItemId";
 import { useApiCall } from "./useApiCall";
 import CounterBidPanel from "./CounterBidPanel";
@@ -14,12 +22,14 @@ import type {
   SubscriptionsResult,
 } from "@/lib/types";
 
-const DEFAULT_PAGE_SIZE = 10;
-const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
+const DEFAULT_PAGE_SIZE = 50;
+const PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 150, 200, 250];
 const FETCH_PAGE_SIZE = 200; // server-side fetch page size (eBay max for GetSellerList)
 const PREFETCH_CONCURRENCY = 4;
 const CACHE_KEY_PREFIX = "ebay-inventory-v1";
-const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+// Stale-while-revalidate window: we'll always show whatever's cached, but if
+// it's older than this we kick off a silent background refresh.
+const CACHE_STALE_AFTER_MS = 10 * 60 * 1000; // 10 minutes
 
 interface CachedInventory {
   items: InventoryItem[];
@@ -36,9 +46,9 @@ function loadCachedInventory(includeEnded: boolean): CachedInventory | null {
   try {
     const raw = window.localStorage.getItem(cacheKey(includeEnded));
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as CachedInventory;
-    if (Date.now() - parsed.timestamp > CACHE_TTL_MS) return null;
-    return parsed;
+    // No TTL gate here — caller decides whether to background-refresh based
+    // on the embedded timestamp. Always showing stale beats showing nothing.
+    return JSON.parse(raw) as CachedInventory;
   } catch {
     return null;
   }
@@ -209,7 +219,12 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
             if (myId !== prefetchRunId.current) return;
             if (data.ok && data.items) {
               accumulated.push(...data.items);
-              setItems((prev) => [...prev, ...data.items!]);
+              // Mark prefetch fan-in as a low-priority transition so React
+              // can keep the UI (sort clicks, pagination, modal) responsive
+              // through ~17 incremental setItems calls.
+              startTransition(() => {
+                setItems((prev) => [...prev, ...data.items!]);
+              });
             }
           } catch {
             /* network blip — skip this page, continue */
@@ -238,8 +253,12 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
     autoPullDone.current = true;
     const cached = loadCachedInventory(includeEnded);
     if (cached) {
+      // Stale-while-revalidate: render the cache instantly so the page is
+      // usable, then quietly refresh in the background if it's stale.
       setItems(cached.items);
       setPull(cached.pull);
+      const ageMs = Date.now() - cached.timestamp;
+      if (ageMs > CACHE_STALE_AFTER_MS) pullFirst({ silent: true });
       return;
     }
     pullFirst({ silent: true });
@@ -664,6 +683,7 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
                             <SortHeader col="title" label="Listing title" />
                             <SortHeader col="sku" label="SKU" />
                             <SortHeader col="price" label="eBay list price" />
+                            <SortHeader col="listingStatus" label="Status" />
                             <th className="px-2 py-1">Shopify created</th>
                             <th className="px-2 py-1">Shopify sticker</th>
                             <th className="px-2 py-1">Shopify cost</th>
@@ -699,6 +719,28 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
                                 </td>
                                 <td className="px-2 py-1 font-mono text-sm">{it.sku}</td>
                                 <td className="px-2 py-1">{formatPrice(it.price, it.currency)}</td>
+                                <td className="px-2 py-1 text-xs">
+                                  {evs && evs.length > 0 ? (
+                                    <span className="inline-flex items-center gap-1">
+                                      <span className="rounded-full bg-amber-100 px-1.5 py-0.5 font-medium text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                                        Bidded
+                                      </span>
+                                      <span className="text-neutral-400">
+                                        {it.listingStatus || ""}
+                                      </span>
+                                    </span>
+                                  ) : (
+                                    <span
+                                      className={
+                                        it.listingStatus === "Active"
+                                          ? "text-green-700 dark:text-green-400"
+                                          : "text-neutral-500"
+                                      }
+                                    >
+                                      {it.listingStatus || "—"}
+                                    </span>
+                                  )}
+                                </td>
                                 <td
                                   className="px-2 py-1 text-xs"
                                   title={sp ? formatDateTime(sp.created_at) : undefined}
@@ -718,7 +760,7 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
                                     isSelected ? "bg-blue-50 dark:bg-blue-950/30" : ""
                                   }`}
                                 >
-                                  <td colSpan={6} className="px-2 pb-2 pt-0">
+                                  <td colSpan={7} className="px-2 pb-2 pt-0">
                                     <div className="flex items-center gap-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm dark:border-amber-900/40 dark:bg-amber-950/20">
                                       <button
                                         type="button"
@@ -852,6 +894,29 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
                                   )}
                                   <dt className="text-neutral-500">eBay list price</dt>
                                   <dd>{formatPrice(it.price, it.currency)}</dd>
+                                  <dt className="text-neutral-500">Status</dt>
+                                  <dd>
+                                    {evs && evs.length > 0 ? (
+                                      <span className="inline-flex items-center gap-1">
+                                        <span className="rounded-full bg-amber-100 px-1.5 py-0.5 font-medium text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                                          Bidded
+                                        </span>
+                                        <span className="text-neutral-400">
+                                          {it.listingStatus || ""}
+                                        </span>
+                                      </span>
+                                    ) : (
+                                      <span
+                                        className={
+                                          it.listingStatus === "Active"
+                                            ? "text-green-700 dark:text-green-400"
+                                            : "text-neutral-500"
+                                        }
+                                      >
+                                        {it.listingStatus || "—"}
+                                      </span>
+                                    )}
+                                  </dd>
                                   <dt className="text-neutral-500">Shopify created</dt>
                                   <dd title={sp ? formatDateTime(sp.created_at) : undefined}>
                                     {sp ? (
