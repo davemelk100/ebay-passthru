@@ -23,11 +23,11 @@ export default function Home() {
           <span>siteId: {cfg.siteId}</span>
           <span>·</span>
           <span>compat: {cfg.compatLevel}</span>
-          <span>·</span>
-          {missing.length > 0 ? (
-            <span className="text-amber-600">missing: {missing.join(", ")}</span>
-          ) : (
-            <span className="text-green-600">credentials loaded</span>
+          {missing.length > 0 && (
+            <>
+              <span>·</span>
+              <span className="text-amber-600">missing: {missing.join(", ")}</span>
+            </>
           )}
         </div>
       </header>
