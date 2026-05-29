@@ -11,7 +11,6 @@ import {
 } from "react";
 import { useRememberedItemId } from "./useRememberedItemId";
 import { useApiCall } from "./useApiCall";
-import CounterBidPanel from "./CounterBidPanel";
 import type {
   InventoryItem,
   InventoryResult,
@@ -142,7 +141,8 @@ function formatPrice(price: string, currency: string): string {
   return fmt.format(n);
 }
 
-export default function FeedView({ env }: { env: "sandbox" | "production" }) {
+export default function FeedView(_props: { env: "sandbox" | "production" }) {
+  void _props;
   const {
     data: pull,
     error: pullError,
@@ -801,14 +801,32 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
                                 >
                                   <td colSpan={6} className="px-2 pb-2 pt-0">
                                     <div className="flex items-center gap-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm dark:border-amber-900/40 dark:bg-amber-950/20">
-                                      <button
-                                        type="button"
-                                        onClick={() => openInCounterBid(it.itemId)}
-                                        title="Open in Counter-bid engine to accept / decline / counter"
-                                        className="flex-shrink-0 rounded-md bg-amber-500 px-3 py-1.5 text-sm font-semibold text-white hover:bg-amber-600"
-                                      >
-                                        Take action →
-                                      </button>
+                                      <div className="flex flex-shrink-0 items-center gap-1.5">
+                                        <button
+                                          type="button"
+                                          onClick={() => openInCounterBid(it.itemId)}
+                                          title="Open Counter-bid modal to confirm accept"
+                                          className="rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700"
+                                        >
+                                          Accept
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => openInCounterBid(it.itemId)}
+                                          title="Open Counter-bid modal to confirm decline"
+                                          className="rounded-md bg-neutral-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-neutral-700"
+                                        >
+                                          Decline
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => openInCounterBid(it.itemId)}
+                                          title="Open Counter-bid modal to send a counter-offer"
+                                          className="rounded-md bg-amber-500 px-3 py-1.5 text-sm font-semibold text-white hover:bg-amber-600"
+                                        >
+                                          Counter
+                                        </button>
+                                      </div>
                                       <ul className="flex-1 space-y-0.5">
                                         {evs.map((e) => (
                                           <li
@@ -885,14 +903,29 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
                                 </p>
                                 {evs && evs.length > 0 && (
                                   <div className="mb-2 flex items-center gap-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm dark:border-amber-900/40 dark:bg-amber-950/20">
-                                    <button
-                                      type="button"
-                                      onClick={() => openInCounterBid(it.itemId)}
-                                      title="Open in Counter-bid engine to accept / decline / counter"
-                                      className="flex-shrink-0 rounded-md bg-amber-500 px-3 py-1.5 text-sm font-semibold text-white hover:bg-amber-600"
-                                    >
-                                      Take action →
-                                    </button>
+                                    <div className="flex flex-shrink-0 flex-wrap items-center gap-1.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => openInCounterBid(it.itemId)}
+                                        className="rounded-md bg-emerald-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-emerald-700"
+                                      >
+                                        Accept
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => openInCounterBid(it.itemId)}
+                                        className="rounded-md bg-neutral-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-neutral-700"
+                                      >
+                                        Decline
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => openInCounterBid(it.itemId)}
+                                        className="rounded-md bg-amber-500 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-amber-600"
+                                      >
+                                        Counter
+                                      </button>
+                                    </div>
                                     <ul className="flex-1 space-y-0.5">
                                       {evs.map((e) => (
                                         <li
@@ -995,13 +1028,13 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
     </details>
     {counterBidOpen && (
       <div
-        className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-4 backdrop-blur-sm"
+        className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/60 p-4 backdrop-blur-sm"
         onClick={() => setCounterBidOpen(false)}
         role="dialog"
         aria-modal="true"
       >
         <div
-          className="relative my-8 w-full max-w-5xl"
+          className="relative w-full max-w-lg rounded-lg border border-neutral-200 bg-white p-6 shadow-xl dark:border-neutral-800 dark:bg-neutral-900"
           onClick={(e) => e.stopPropagation()}
         >
           <button
@@ -1012,7 +1045,25 @@ export default function FeedView({ env }: { env: "sandbox" | "production" }) {
           >
             ×
           </button>
-          <CounterBidPanel env={env} />
+          <div className="flex flex-col items-center text-center">
+            <span className="mb-3 text-4xl" aria-hidden="true">
+              🚧
+            </span>
+            <h3 className="mb-2 text-lg font-semibold text-neutral-800 dark:text-neutral-100">
+              Actions disabled — testing phase
+            </h3>
+            <p className="text-sm text-neutral-600 dark:text-neutral-400">
+              Accept, Decline, and Counter are currently view-only. Live offer
+              responses will be enabled once we exit the testing phase.
+            </p>
+            <button
+              type="button"
+              onClick={() => setCounterBidOpen(false)}
+              className="mt-5 rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 dark:bg-neutral-100 dark:text-neutral-900"
+            >
+              Got it
+            </button>
+          </div>
         </div>
       </div>
     )}
