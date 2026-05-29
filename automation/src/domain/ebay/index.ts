@@ -29,3 +29,10 @@ export {
   parseNotificationXml,
   verifyNotificationSignature,
 } from "./notifications.js";
+
+export {
+  type RespondAction,
+  type RespondToBestOfferInput,
+  buildRespondInnerXml,
+  respondToBestOffer,
+} from "./respond.js";
