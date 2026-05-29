@@ -70,8 +70,6 @@ See `docs/RUNBOOK.md` (TODO) for rotations, debugging, and rollback.
 These are deliberate v0 omissions, called out so the missing surface is
 **explicit, not implied**:
 
-- Admin UI — server-rendered HTML or a small frontend; TBD
-- Authentication on `/admin/*` — placeholder shared bearer for v0, SSO later
 - Cloud Tasks / Pub/Sub fan-out — in-process queue for v0
 - Terraform IaC — gcloud bash scripts for v0
 - Reconciliation poller body — endpoint exists, polling logic TBD
@@ -120,15 +118,18 @@ automation/
 │   │       ├── xml.ts           #   asArray / getPath / extractArray / parser
 │   │       ├── curl.ts          #   curlRequest (TLS-fingerprint workaround)
 │   │       └── trading.ts       #   buildRequestBody + getAccessToken + callTradingApi
+│   ├── lib/
+│   │   ├── auth.ts              # bearer-token middleware for /admin/*
+│   │   └── layout.ts            # shared HTML shell + status pills
 │   └── routes/
 │       ├── health.ts            # /healthz, /readyz
-│       ├── notifications.ts     # POST /webhooks/ebay (stub)
+│       ├── notifications.ts     # POST /webhooks/ebay
 │       ├── jobs/
 │       │   └── reconcile.ts     # POST /jobs/reconcile (stub)
 │       └── admin/
-│           ├── rules.ts         # CRUD for rule sets (stub)
-│           ├── fees.ts          # CRUD for fee profile (stub)
-│           └── history.ts       # audit query (stub)
+│           ├── rules.ts         # list / create draft / edit / publish (HTML + JSON)
+│           ├── fees.ts          # active profile + defaults (HTML + JSON)
+│           └── history.ts       # filterable list / drill-down / CSV (HTML + JSON)
 ├── tests/
 │   └── fees.test.ts
 └── infra/
