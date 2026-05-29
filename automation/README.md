@@ -71,7 +71,6 @@ These are deliberate v0 omissions, called out so the missing surface is
 **explicit, not implied**:
 
 - Real rule engine integration — port from `../lib/counter-bid.ts`
-- Real eBay Trading API client — port from `../lib/ebay.ts`
 - Admin UI — server-rendered HTML or a small frontend; TBD
 - Authentication on `/admin/*` — placeholder shared bearer for v0, SSO later
 - Cloud Tasks / Pub/Sub fan-out — in-process queue for v0
@@ -103,7 +102,13 @@ automation/
 │   │   ├── schema.ts            # Drizzle Postgres schema
 │   │   └── client.ts            # connection pool
 │   ├── domain/
-│   │   └── fees.ts              # tiered FVF + TRS discount math (real, tested)
+│   │   ├── fees.ts              # tiered FVF + TRS discount math (real, tested)
+│   │   └── ebay/                # Trading API client (real, tested)
+│   │       ├── index.ts         #   re-export surface
+│   │       ├── config.ts        #   EbayConfig + configIssues + endpointFor
+│   │       ├── xml.ts           #   asArray / getPath / extractArray / parser
+│   │       ├── curl.ts          #   curlRequest (TLS-fingerprint workaround)
+│   │       └── trading.ts       #   buildRequestBody + getAccessToken + callTradingApi
 │   └── routes/
 │       ├── health.ts            # /healthz, /readyz
 │       ├── notifications.ts     # POST /webhooks/ebay (stub)
