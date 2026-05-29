@@ -880,43 +880,47 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
                                   )}
                                 </p>
                                 {evs && evs.length > 0 && (
-                                  <div className="mb-2 flex items-center gap-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm dark:border-amber-900/40 dark:bg-amber-950/20">
-                                    <button
-                                      type="button"
-                                      onClick={() => setTakeActionOpen(true)}
-                                      className="flex-shrink-0 rounded-md bg-amber-500 px-3 py-1.5 text-sm font-semibold text-white hover:bg-amber-600"
-                                    >
-                                      Take action →
-                                    </button>
-                                    <ul className="flex-1 space-y-0.5">
+                                  <div className="mb-2 flex flex-col gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm dark:border-amber-900/40 dark:bg-amber-950/20">
+                                    <ul className="space-y-1">
                                       {evs.map((e) => (
                                         <li
                                           key={e.id}
-                                          className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5"
+                                          className="flex flex-col gap-0.5"
                                         >
-                                          <span className="font-mono text-neutral-500">
-                                            {formatDateTime(e.timestamp)}
-                                          </span>
-                                          <span className="font-mono text-[11px] text-neutral-400">
-                                            ({formatTimeAgo(e.timestamp)})
-                                          </span>
-                                          <strong className="text-amber-800 dark:text-amber-300">
-                                            {e.eventName}
-                                          </strong>
-                                          {e.offerPrice !== undefined && (
-                                            <span>
-                                              {e.offerPrice} {e.currency || ""}
-                                              {e.quantity ? ` × ${e.quantity}` : ""}
+                                          <div className="flex flex-wrap items-baseline gap-x-2">
+                                            <span className="font-mono text-neutral-500">
+                                              {formatDateTime(e.timestamp)}
                                             </span>
-                                          )}
-                                          {e.buyerUserId && (
-                                            <span className="font-mono">
-                                              from {e.buyerUserId}
+                                            <span className="font-mono text-[11px] text-neutral-400">
+                                              ({formatTimeAgo(e.timestamp)})
                                             </span>
-                                          )}
+                                          </div>
+                                          <div className="flex flex-wrap items-baseline gap-x-2">
+                                            <strong className="text-amber-800 dark:text-amber-300">
+                                              {e.eventName}
+                                            </strong>
+                                            {e.offerPrice !== undefined && (
+                                              <span>
+                                                {e.offerPrice} {e.currency || ""}
+                                                {e.quantity ? ` × ${e.quantity}` : ""}
+                                              </span>
+                                            )}
+                                            {e.buyerUserId && (
+                                              <span className="font-mono">
+                                                from {e.buyerUserId}
+                                              </span>
+                                            )}
+                                          </div>
                                         </li>
                                       ))}
                                     </ul>
+                                    <button
+                                      type="button"
+                                      onClick={() => setTakeActionOpen(true)}
+                                      className="self-start rounded-md bg-amber-500 px-3 py-1.5 text-sm font-semibold text-white hover:bg-amber-600"
+                                    >
+                                      Take action →
+                                    </button>
                                   </div>
                                 )}
                                 <dl className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1">
