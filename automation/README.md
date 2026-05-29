@@ -38,15 +38,29 @@ via `git subtree split` — no in-place rewrites needed.
 
 ```bash
 cd automation
-cp .env.example .env.local      # fill DATABASE_URL + eBay creds
+cp .env.example .env.local      # fill DATABASE_URL + eBay creds + ADMIN_BEARER_TOKEN
 npm install
 npm run db:migrate              # apply schema migrations
+npm run db:seed                 # insert a published ruleset + sample decisions (idempotent)
 npm run dev                     # http://localhost:8080
 ```
 
 ```bash
 # verify
 curl localhost:8080/healthz
+# admin (requires Authorization: Bearer $ADMIN_BEARER_TOKEN)
+open "http://localhost:8080/admin/rules"
+```
+
+### Re-seeding
+
+`db:seed` is idempotent: if a published rule set already exists, it leaves
+rule sets alone and only attempts to insert sample decisions (deduped on
+`best_offer_id` via `ON CONFLICT DO NOTHING`). To force a fresh draft +
+publish on top of the existing one (bumps `version`):
+
+```bash
+SEED_FORCE=1 npm run db:seed
 ```
 
 ## Deploy (first time)
@@ -108,7 +122,10 @@ automation/
 │   │   ├── client.ts            # connection pool
 │   │   ├── queries.ts           # findExistingDecision / loadActiveRuleSet /
 │   │   │                        # resolvePause / insertDecision / checkDbHealth
+│   │   ├── rule-set-queries.ts  # CRUD + publish swap
+│   │   ├── decision-queries.ts  # filterable history reads
 │   │   ├── deps.ts              # buildPipelineDeps(db, cfg) factory for production
+│   │   ├── seed.ts              # `npm run db:seed` — idempotent dev fixtures
 │   │   └── migrations/          # drizzle-kit-generated SQL — checked in
 │   ├── domain/
 │   │   ├── fees.ts              # tiered FVF + TRS discount math (real, tested)
