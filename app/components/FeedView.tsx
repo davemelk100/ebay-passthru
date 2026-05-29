@@ -716,6 +716,7 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
                       <table className="w-full text-left text-sm">
                         <thead className="text-xs uppercase text-neutral-500">
                           <tr>
+                            <th className="px-2 py-1"></th>
                             <SortHeader col="title" label="Listing title" />
                             <SortHeader col="sku" label="SKU" />
                             <SortHeader col="price" label="eBay list price" />
@@ -739,6 +740,19 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
                                     : ""
                                 }`}
                               >
+                                <td className="px-2 py-1">
+                                  {it.pictureUrls?.[0] ? (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img
+                                      src={it.pictureUrls[0]}
+                                      alt=""
+                                      loading="lazy"
+                                      className="h-14 w-14 rounded object-cover"
+                                    />
+                                  ) : (
+                                    <div className="h-14 w-14 rounded bg-neutral-100 dark:bg-neutral-800" />
+                                  )}
+                                </td>
                                 <td className="px-2 py-1">
                                   {it.viewItemUrl ? (
                                     <a
@@ -796,7 +810,7 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
                                     isSelected ? "bg-blue-50 dark:bg-blue-950/30" : ""
                                   }`}
                                 >
-                                  <td colSpan={7} className="px-2 pb-2 pt-0">
+                                  <td colSpan={8} className="px-2 pb-2 pt-0">
                                     <div className="flex items-center gap-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm dark:border-amber-900/40 dark:bg-amber-950/20">
                                       <button
                                         type="button"
@@ -811,7 +825,7 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
                                             key={e.id}
                                             className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5"
                                           >
-                                            <span className="font-mono text-neutral-500">
+                                            <span className="font-mono text-xs text-neutral-500">
                                               {formatDateTime(e.timestamp)}
                                             </span>
                                             <span className="font-mono text-[11px] text-neutral-400">
@@ -863,7 +877,18 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
                                 : ""
                             }`}
                           >
-                            <div>
+                            <div className="flex items-start gap-3">
+                              {it.pictureUrls?.[0] ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  src={it.pictureUrls[0]}
+                                  alt=""
+                                  loading="lazy"
+                                  className="w-24 flex-shrink-0 rounded object-contain"
+                                />
+                              ) : (
+                                <div className="aspect-square w-24 flex-shrink-0 rounded bg-neutral-100 dark:bg-neutral-800" />
+                              )}
                               <div className="min-w-0 flex-1">
                                 <p className="mb-2 text-sm font-medium text-neutral-800 dark:text-neutral-100">
                                   {it.viewItemUrl ? (
@@ -888,7 +913,7 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
                                           className="flex flex-col gap-0.5"
                                         >
                                           <div className="flex flex-wrap items-baseline gap-x-2">
-                                            <span className="font-mono text-neutral-500">
+                                            <span className="font-mono text-xs text-neutral-500">
                                               {formatDateTime(e.timestamp)}
                                             </span>
                                             <span className="font-mono text-[11px] text-neutral-400">
