@@ -159,7 +159,7 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
     "default",
   );
   const [shopify, setShopify] = useState<Record<string, ShopifyProduct>>({});
-  const [counterBidOpen, setCounterBidOpen] = useState(false);
+  const [takeActionOpen, setTakeActionOpen] = useState(false);
   const seenEventIds = useRef<Set<string>>(new Set());
   const firstPollDone = useRef(false);
 
@@ -447,22 +447,15 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
     setNotifPermission(result);
   }
 
-  // Stamp the ItemID into the shared hook (so the Counter-bid panel — rendered
-  // inside the modal — picks it up via useRememberedItemId) and open the modal.
-  function openInCounterBid(itemId: string) {
-    setRememberedItemId(itemId);
-    setCounterBidOpen(true);
-  }
-
-  // ESC key closes the modal — standard expectation.
+  // ESC closes the placeholder "take action" modal — standard expectation.
   useEffect(() => {
-    if (!counterBidOpen) return;
+    if (!takeActionOpen) return;
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setCounterBidOpen(false);
+      if (e.key === "Escape") setTakeActionOpen(false);
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [counterBidOpen]);
+  }, [takeActionOpen]);
 
   const events: NotificationEvent[] = recent?.events ?? [];
 
@@ -801,32 +794,13 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
                                 >
                                   <td colSpan={6} className="px-2 pb-2 pt-0">
                                     <div className="flex items-center gap-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm dark:border-amber-900/40 dark:bg-amber-950/20">
-                                      <div className="flex flex-shrink-0 items-center gap-1.5">
-                                        <button
-                                          type="button"
-                                          onClick={() => openInCounterBid(it.itemId)}
-                                          title="Open Counter-bid modal to confirm accept"
-                                          className="rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700"
-                                        >
-                                          Accept
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() => openInCounterBid(it.itemId)}
-                                          title="Open Counter-bid modal to confirm decline"
-                                          className="rounded-md bg-neutral-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-neutral-700"
-                                        >
-                                          Decline
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() => openInCounterBid(it.itemId)}
-                                          title="Open Counter-bid modal to send a counter-offer"
-                                          className="rounded-md bg-amber-500 px-3 py-1.5 text-sm font-semibold text-white hover:bg-amber-600"
-                                        >
-                                          Counter
-                                        </button>
-                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={() => setTakeActionOpen(true)}
+                                        className="flex-shrink-0 rounded-md bg-amber-500 px-3 py-1.5 text-sm font-semibold text-white hover:bg-amber-600"
+                                      >
+                                        Take action →
+                                      </button>
                                       <ul className="flex-1 space-y-0.5">
                                         {evs.map((e) => (
                                           <li
@@ -903,29 +877,13 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
                                 </p>
                                 {evs && evs.length > 0 && (
                                   <div className="mb-2 flex items-center gap-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm dark:border-amber-900/40 dark:bg-amber-950/20">
-                                    <div className="flex flex-shrink-0 flex-wrap items-center gap-1.5">
-                                      <button
-                                        type="button"
-                                        onClick={() => openInCounterBid(it.itemId)}
-                                        className="rounded-md bg-emerald-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-emerald-700"
-                                      >
-                                        Accept
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => openInCounterBid(it.itemId)}
-                                        className="rounded-md bg-neutral-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-neutral-700"
-                                      >
-                                        Decline
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => openInCounterBid(it.itemId)}
-                                        className="rounded-md bg-amber-500 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-amber-600"
-                                      >
-                                        Counter
-                                      </button>
-                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => setTakeActionOpen(true)}
+                                      className="flex-shrink-0 rounded-md bg-amber-500 px-3 py-1.5 text-sm font-semibold text-white hover:bg-amber-600"
+                                    >
+                                      Take action →
+                                    </button>
                                     <ul className="flex-1 space-y-0.5">
                                       {evs.map((e) => (
                                         <li
@@ -1026,10 +984,10 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
         ) : null}
       </div>
     </details>
-    {counterBidOpen && (
+    {takeActionOpen && (
       <div
         className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/60 p-4 backdrop-blur-sm"
-        onClick={() => setCounterBidOpen(false)}
+        onClick={() => setTakeActionOpen(false)}
         role="dialog"
         aria-modal="true"
       >
@@ -1039,7 +997,7 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
         >
           <button
             type="button"
-            onClick={() => setCounterBidOpen(false)}
+            onClick={() => setTakeActionOpen(false)}
             aria-label="Close"
             className="absolute -right-2 -top-2 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-white text-xl font-medium text-neutral-700 shadow-lg hover:bg-neutral-100 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
           >
@@ -1050,15 +1008,16 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
               🚧
             </span>
             <h3 className="mb-2 text-lg font-semibold text-neutral-800 dark:text-neutral-100">
-              Actions disabled — testing phase
+              Can&apos;t take action here yet
             </h3>
             <p className="text-sm text-neutral-600 dark:text-neutral-400">
-              Accept, Decline, and Counter are currently view-only. Live offer
-              responses will be enabled once we exit the testing phase.
+              Accepting, declining, or countering buyer offers can&apos;t be
+              done from this view. Handle the offer directly in eBay until the
+              automated response engine is wired up.
             </p>
             <button
               type="button"
-              onClick={() => setCounterBidOpen(false)}
+              onClick={() => setTakeActionOpen(false)}
               className="mt-5 rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 dark:bg-neutral-100 dark:text-neutral-900"
             >
               Got it
