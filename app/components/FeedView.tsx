@@ -722,6 +722,7 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
                             <SortHeader col="listingStatus" label="Status" />
                             <th className="px-2 py-1">Shopify created</th>
                             <th className="px-2 py-1">Shopify sticker</th>
+                            <th className="px-2 py-1">Shopify cost</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -785,6 +786,9 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
                                 <td className="px-2 py-1">
                                   {sp ? formatPrice(sp.price, "USD") : <span className="text-neutral-400">—</span>}
                                 </td>
+                                <td className="px-2 py-1">
+                                  {sp?.cost ? formatPrice(sp.cost, "USD") : <span className="text-neutral-400">—</span>}
+                                </td>
                               </tr>
                               {evs && evs.length > 0 && (
                                 <tr
@@ -792,7 +796,7 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
                                     isSelected ? "bg-blue-50 dark:bg-blue-950/30" : ""
                                   }`}
                                 >
-                                  <td colSpan={6} className="px-2 pb-2 pt-0">
+                                  <td colSpan={7} className="px-2 pb-2 pt-0">
                                     <div className="flex items-center gap-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm dark:border-amber-900/40 dark:bg-amber-950/20">
                                       <button
                                         type="button"
@@ -959,6 +963,14 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
                                   <dd>
                                     {sp ? (
                                       formatPrice(sp.price, "USD")
+                                    ) : (
+                                      <span className="text-neutral-400">—</span>
+                                    )}
+                                  </dd>
+                                  <dt className="text-neutral-500">Shopify cost</dt>
+                                  <dd>
+                                    {sp?.cost ? (
+                                      formatPrice(sp.cost, "USD")
                                     ) : (
                                       <span className="text-neutral-400">—</span>
                                     )}

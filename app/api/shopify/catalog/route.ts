@@ -4,14 +4,18 @@ import type { ShopifyCatalogResult, ShopifyProduct } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-// Worst case: 5,800+ products at 250/page ≈ 24 GraphQL round trips.
+// Worst case: full catalog walk + inventory_items batches. 5 min ceiling.
 export const maxDuration = 300;
 
-const STOREFRONT_API_VERSION = "2024-10";
-const CACHE_KEY = "shopify:catalog:v4"; // bumped — storefront shape (no cost)
+const ADMIN_API_VERSION = "2024-10";
+const CACHE_KEY = "shopify:catalog:v5"; // bumped: admin path w/ cost
+const TOKEN_CACHE_KEY = "shopify:admin:token:v2";
 const CACHE_TTL_SECONDS = 60 * 60 * 24; // 24h
-const PRODUCTS_PER_PAGE = 250; // Storefront API max
-const VARIANTS_PER_PRODUCT = 100;
+const TOKEN_REFRESH_SAFETY_SECONDS = 60;
+const PAGE_LIMIT = 250;
+const INVENTORY_BATCH_SIZE = 100;
+// Trim Admin API payload; metafields/images/options bloat each response.
+const PRODUCT_FIELDS = "id,title,handle,created_at,vendor,variants";
 
 const UPSTASH_URL = (
   process.env.UPSTASH_REDIS_REST_URL ?? process.env.KV_REST_API_URL
@@ -43,83 +47,138 @@ async function upstashSetEx(key: string, value: string, ttl: number): Promise<vo
   });
 }
 
-interface MoneyV2 {
-  amount: string;
-  currencyCode: string;
-}
-
-interface StorefrontProductsResponse {
-  data?: {
-    products: {
-      pageInfo: { hasNextPage: boolean; endCursor: string | null };
-      edges: Array<{
-        node: {
-          title: string;
-          handle: string;
-          createdAt: string;
-          variants: {
-            edges: Array<{
-              node: {
-                sku: string | null;
-                price: MoneyV2;
-                compareAtPrice: MoneyV2 | null;
-              };
-            }>;
-          };
-        };
-      }>;
-    };
-  };
-  errors?: Array<{ message: string }>;
-}
-
-// Storefront GraphQL query. Pagination uses cursor-based pageInfo per
-// Shopify's spec (not REST Link headers). Each product fans out into its
-// variants so we get SKU + price in one round trip per product page.
-const PRODUCTS_QUERY = `
-  query Products($cursor: String) {
-    products(first: ${PRODUCTS_PER_PAGE}, after: $cursor) {
-      pageInfo { hasNextPage endCursor }
-      edges {
-        node {
-          title
-          handle
-          createdAt
-          variants(first: ${VARIANTS_PER_PRODUCT}) {
-            edges {
-              node {
-                sku
-                price { amount currencyCode }
-                compareAtPrice { amount currencyCode }
-              }
-            }
-          }
-        }
+// Exchange Client ID + Client Secret for a 24h Admin API access token via
+// the client_credentials grant. Cached in Upstash; auto-refreshes ≥60s
+// before expiry. App must be installed on the shop or the OAuth endpoint
+// returns "app_not_installed".
+async function getAdminAccessToken(
+  domain: string,
+): Promise<{ token: string } | { error: string; status: number; hint?: string }> {
+  const cached = await upstashGet(TOKEN_CACHE_KEY);
+  if (cached) {
+    try {
+      const parsed = JSON.parse(cached) as { token: string; expiresAt: number };
+      if (parsed.expiresAt > Date.now() + TOKEN_REFRESH_SAFETY_SECONDS * 1000) {
+        return { token: parsed.token };
       }
+    } catch {
+      /* fall through */
     }
   }
-`;
+
+  const apiKey = process.env.SHOPIFY_API_KEY?.trim() ?? "";
+  const apiSecret = process.env.SHOPIFY_API_SECRET_KEY?.trim() ?? "";
+  if (!apiKey || !apiSecret) {
+    const missing: string[] = [];
+    if (!apiKey) missing.push("SHOPIFY_API_KEY");
+    if (!apiSecret) missing.push("SHOPIFY_API_SECRET_KEY");
+    return {
+      error: `Missing env vars: ${missing.join(", ")}`,
+      status: 412,
+      hint: "Both come from the Shopify app's Client credentials screen (Client ID + Client Secret).",
+    };
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(`https://${domain}/admin/oauth/access_token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({
+        client_id: apiKey,
+        client_secret: apiSecret,
+        grant_type: "client_credentials",
+      }),
+      cache: "no-store",
+    });
+  } catch (e) {
+    return {
+      error: `Token exchange network error: ${(e as Error).message}`,
+      status: 502,
+    };
+  }
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    return {
+      error: `Token exchange HTTP ${res.status}: ${body.slice(0, 200)}`,
+      status: 502,
+      hint:
+        res.status === 400 && body.includes("app_not_installed")
+          ? "App must be installed on this shop. Use the Custom Distribution install link from the app's Distribution page."
+          : res.status === 401
+            ? "Client ID / Client Secret rejected. Confirm both come from the same app."
+            : undefined,
+    };
+  }
+  const data = (await res.json()) as { access_token?: string; expires_in?: number };
+  if (!data.access_token) {
+    return { error: "Token exchange returned no access_token", status: 502 };
+  }
+  const expiresIn = typeof data.expires_in === "number" ? data.expires_in : 86400;
+  const expiresAt = Date.now() + expiresIn * 1000;
+  await upstashSetEx(
+    TOKEN_CACHE_KEY,
+    JSON.stringify({ token: data.access_token, expiresAt }),
+    Math.max(expiresIn - TOKEN_REFRESH_SAFETY_SECONDS, 60),
+  );
+  return { token: data.access_token };
+}
+
+function parseNextLink(linkHeader: string | null): string | null {
+  if (!linkHeader) return null;
+  for (const part of linkHeader.split(",")) {
+    const m = part.match(/<([^>]+)>;\s*rel="next"/);
+    if (m) return m[1];
+  }
+  return null;
+}
+
+interface RawShopifyVariant {
+  sku?: string;
+  price?: string;
+  compare_at_price?: string | null;
+  inventory_item_id?: number;
+}
+interface RawShopifyProduct {
+  id?: number;
+  title?: string;
+  handle?: string;
+  created_at?: string;
+  vendor?: string;
+  variants?: RawShopifyVariant[];
+}
 
 export async function GET() {
   const domainRaw = process.env.SHOPIFY_SHOP_DOMAIN?.trim() ?? "";
   const domain = domainRaw.replace(/^https?:\/\//, "").replace(/\/$/, "");
-  const storefrontToken = process.env.SHOPIFY_STOREFRONT_TOKEN?.trim() ?? "";
-
-  const missing: string[] = [];
-  if (!domain) missing.push("SHOPIFY_SHOP_DOMAIN");
-  if (!storefrontToken) missing.push("SHOPIFY_STOREFRONT_TOKEN");
-  if (missing.length) {
+  if (!domain) {
     return NextResponse.json(
       {
         ok: false,
-        error: `Missing env vars: ${missing.join(", ")}`,
-        hint:
-          "SHOPIFY_STOREFRONT_TOKEN is the Storefront API access token (starts with shpss_). " +
-          "Generated from the app's Storefront API tokens screen.",
+        error: "Missing env var: SHOPIFY_SHOP_DOMAIN",
+        hint: "Set SHOPIFY_SHOP_DOMAIN to the *.myshopify.com hostname.",
       } satisfies ShopifyCatalogResult,
       { status: 412 },
     );
   }
+  if (!domain.endsWith(".myshopify.com")) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: `SHOPIFY_SHOP_DOMAIN must end in .myshopify.com for Admin API access (got "${domain}").`,
+      } satisfies ShopifyCatalogResult,
+      { status: 412 },
+    );
+  }
+
+  const tokenResult = await getAdminAccessToken(domain);
+  if ("error" in tokenResult) {
+    return NextResponse.json(
+      { ok: false, error: tokenResult.error, hint: tokenResult.hint } satisfies ShopifyCatalogResult,
+      { status: tokenResult.status },
+    );
+  }
+  const adminToken = tokenResult.token;
 
   const cached = await upstashGet(CACHE_KEY);
   if (cached) {
@@ -131,29 +190,29 @@ export async function GET() {
   }
 
   const map: Record<string, ShopifyProduct> = {};
+  // Track inventory_item_id -> sku so we can fold cost back into the map
+  // after the bulk inventory_items walk.
+  const skuByInventoryItemId = new Map<number, string>();
   const started = Date.now();
-  let cursor: string | null = null;
+  let url: string | null =
+    `https://${domain}/admin/api/${ADMIN_API_VERSION}/products.json?limit=${PAGE_LIMIT}&fields=${PRODUCT_FIELDS}`;
   let pageCount = 0;
-  const endpoint = `https://${domain}/api/${STOREFRONT_API_VERSION}/graphql.json`;
 
-  while (true) {
+  while (url) {
     let res: Response;
     try {
-      res = await fetch(endpoint, {
-        method: "POST",
+      res = await fetch(url, {
         headers: {
-          "X-Shopify-Storefront-Access-Token": storefrontToken,
-          "Content-Type": "application/json",
+          "X-Shopify-Access-Token": adminToken,
           Accept: "application/json",
         },
-        body: JSON.stringify({ query: PRODUCTS_QUERY, variables: { cursor } }),
         cache: "no-store",
       });
     } catch (e) {
       return NextResponse.json(
         {
           ok: false,
-          error: `Storefront API network error on page ${pageCount + 1}: ${(e as Error).message}`,
+          error: `Network error from Admin API on page ${pageCount + 1}: ${(e as Error).message}`,
         } satisfies ShopifyCatalogResult,
         { status: 502 },
       );
@@ -163,43 +222,25 @@ export async function GET() {
       return NextResponse.json(
         {
           ok: false,
-          error: `Storefront API HTTP ${res.status} on page ${pageCount + 1}: ${body.slice(0, 200)}`,
+          error: `Admin API HTTP ${res.status} on page ${pageCount + 1}: ${body.slice(0, 200)}`,
           hint:
-            res.status === 401 || res.status === 403
-              ? "Token is invalid or missing required scopes (unauthenticated_read_product_listings)."
-              : res.status === 430 || res.status === 429
-                ? "Throttled — Storefront API leaky bucket exceeded."
+            res.status === 401
+              ? "Token rejected — scope missing or token expired."
+              : res.status === 429
+                ? "Rate-limited. Lower call rate or retry after Retry-After."
                 : undefined,
         } satisfies ShopifyCatalogResult,
         { status: 502 },
       );
     }
 
-    const json = (await res.json()) as StorefrontProductsResponse;
-    if (json.errors?.length) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error: `GraphQL errors: ${json.errors.map((e) => e.message).join("; ").slice(0, 300)}`,
-        } satisfies ShopifyCatalogResult,
-        { status: 502 },
-      );
-    }
-    const block = json.data?.products;
-    if (!block) {
-      return NextResponse.json(
-        { ok: false, error: "Storefront response missing data.products" } satisfies ShopifyCatalogResult,
-        { status: 502 },
-      );
-    }
-
-    for (const productEdge of block.edges) {
-      const p = productEdge.node;
+    const data = (await res.json()) as { products?: RawShopifyProduct[] };
+    const products = data.products ?? [];
+    for (const p of products) {
       const handle = String(p.handle ?? "");
       const title = String(p.title ?? "");
-      const created_at = String(p.createdAt ?? "");
-      for (const variantEdge of p.variants.edges) {
-        const v = variantEdge.node;
+      const created_at = String(p.created_at ?? "");
+      for (const v of p.variants ?? []) {
         const sku = String(v.sku ?? "").trim();
         if (!sku) continue;
         map[sku] = {
@@ -207,15 +248,61 @@ export async function GET() {
           handle,
           title,
           created_at,
-          price: String(v.price?.amount ?? ""),
-          compareAtPrice: v.compareAtPrice?.amount ? String(v.compareAtPrice.amount) : undefined,
+          price: String(v.price ?? ""),
+          compareAtPrice:
+            v.compare_at_price != null ? String(v.compare_at_price) : undefined,
         };
+        if (typeof v.inventory_item_id === "number") {
+          skuByInventoryItemId.set(v.inventory_item_id, sku);
+        }
       }
     }
     pageCount += 1;
-    if (!block.pageInfo.hasNextPage || !block.pageInfo.endCursor) break;
-    cursor = block.pageInfo.endCursor;
-    if (pageCount > 50) break; // safety ceiling: 50 × 250 = 12,500 products
+    url = parseNextLink(res.headers.get("link"));
+    if (pageCount > 50) break;
+  }
+
+  // ---- Fold COGS via inventory_items.json -----------------------------
+  // Cost lives on InventoryItem, not on Variant. Batch fetch by ID, max 100
+  // per call. Failures here don't tank the whole catalog — sticker still
+  // surfaces; cost just stays undefined for failed batches.
+  const inventoryItemIds = Array.from(skuByInventoryItemId.keys());
+  for (let i = 0; i < inventoryItemIds.length; i += INVENTORY_BATCH_SIZE) {
+    const batch = inventoryItemIds.slice(i, i + INVENTORY_BATCH_SIZE);
+    const invUrl = `https://${domain}/admin/api/${ADMIN_API_VERSION}/inventory_items.json?ids=${batch.join(",")}`;
+    let invRes: Response;
+    try {
+      invRes = await fetch(invUrl, {
+        headers: {
+          "X-Shopify-Access-Token": adminToken,
+          Accept: "application/json",
+        },
+        cache: "no-store",
+      });
+    } catch (e) {
+      console.warn(
+        `shopify-catalog: inventory_items batch ${i} network error`,
+        (e as Error).message,
+      );
+      continue;
+    }
+    if (!invRes.ok) {
+      console.warn(
+        `shopify-catalog: inventory_items HTTP ${invRes.status} for batch ${i}`,
+        (await invRes.text().catch(() => "")).slice(0, 200),
+      );
+      continue;
+    }
+    const invData = (await invRes.json()) as {
+      inventory_items?: { id?: number; cost?: string | null }[];
+    };
+    for (const item of invData.inventory_items ?? []) {
+      if (typeof item.id !== "number") continue;
+      const sku = skuByInventoryItemId.get(item.id);
+      if (!sku || item.cost == null) continue;
+      const product = map[sku];
+      if (product) product.cost = String(item.cost);
+    }
   }
 
   const result: ShopifyCatalogResult = {
