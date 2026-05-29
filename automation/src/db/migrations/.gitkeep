@@ -1,0 +1,6 @@
+# Migration files are generated from src/db/schema.ts by drizzle-kit:
+#
+#   npm run db:generate    # creates the next 0000_*.sql migration
+#   npm run db:migrate     # applies pending migrations against DATABASE_URL
+#
+# Generated files live in this directory and ARE checked in.

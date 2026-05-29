@@ -70,13 +70,20 @@ See `docs/RUNBOOK.md` (TODO) for rotations, debugging, and rollback.
 These are deliberate v0 omissions, called out so the missing surface is
 **explicit, not implied**:
 
-- Real rule engine integration — port from `../lib/counter-bid.ts`
 - Admin UI — server-rendered HTML or a small frontend; TBD
 - Authentication on `/admin/*` — placeholder shared bearer for v0, SSO later
 - Cloud Tasks / Pub/Sub fan-out — in-process queue for v0
 - Terraform IaC — gcloud bash scripts for v0
 - Reconciliation poller body — endpoint exists, polling logic TBD
-- Notification signature verification — port from `../app/api/webhooks/ebay/route.ts`
+- **OfferContext assembly in `routes/notifications.ts`** — the receiver still
+  just logs + 200s. Building a complete `OfferContext` (listingPrice via
+  `GetItem`, comps from a TBD source, grade from item specifics) and calling
+  `processOffer(...)` is the next wire-up step. Pipeline + deps factory are
+  ready and tested.
+- **Integration tests against real Postgres** — `tests/db/queries.test.ts`
+  unit-tests the query shapes against a fake Drizzle. A `tests/integration/`
+  directory will hold tests gated on `DATABASE_URL` pointing at an empty
+  test database. Not wired into CI yet.
 
 The fee model, Postgres schema, env loader, logger, and project structure are
 real and covered by tests.
@@ -100,7 +107,11 @@ automation/
 │   │   └── log.ts               # pino logger
 │   ├── db/
 │   │   ├── schema.ts            # Drizzle Postgres schema
-│   │   └── client.ts            # connection pool
+│   │   ├── client.ts            # connection pool
+│   │   ├── queries.ts           # findExistingDecision / loadActiveRuleSet /
+│   │   │                        # resolvePause / insertDecision / checkDbHealth
+│   │   ├── deps.ts              # buildPipelineDeps(db, cfg) factory for production
+│   │   └── migrations/          # drizzle-kit-generated SQL — checked in
 │   ├── domain/
 │   │   ├── fees.ts              # tiered FVF + TRS discount math (real, tested)
 │   │   └── ebay/                # Trading API client (real, tested)
