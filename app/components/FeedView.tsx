@@ -811,11 +811,11 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
                                             key={e.id}
                                             className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5"
                                           >
-                                            <span
-                                              className="font-mono text-neutral-500"
-                                              title={formatDateTime(e.timestamp)}
-                                            >
-                                              {formatTimeAgo(e.timestamp)}
+                                            <span className="font-mono text-neutral-500">
+                                              {formatDateTime(e.timestamp)}
+                                            </span>
+                                            <span className="font-mono text-[11px] text-neutral-400">
+                                              ({formatTimeAgo(e.timestamp)})
                                             </span>
                                             <strong className="text-amber-800 dark:text-amber-300">
                                               {e.eventName}
@@ -894,11 +894,11 @@ export default function FeedView(_props: { env: "sandbox" | "production" }) {
                                           key={e.id}
                                           className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5"
                                         >
-                                          <span
-                                            className="font-mono text-neutral-500"
-                                            title={formatDateTime(e.timestamp)}
-                                          >
-                                            {formatTimeAgo(e.timestamp)}
+                                          <span className="font-mono text-neutral-500">
+                                            {formatDateTime(e.timestamp)}
+                                          </span>
+                                          <span className="font-mono text-[11px] text-neutral-400">
+                                            ({formatTimeAgo(e.timestamp)})
                                           </span>
                                           <strong className="text-amber-800 dark:text-amber-300">
                                             {e.eventName}
