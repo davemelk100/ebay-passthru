@@ -21,3 +21,11 @@ export {
 } from "./trading.js";
 
 export { asArray, extractArray, getPath, getResponse, parser } from "./xml.js";
+
+export {
+  type NotificationCreds,
+  type ParsedNotification,
+  type ParseResult,
+  parseNotificationXml,
+  verifyNotificationSignature,
+} from "./notifications.js";

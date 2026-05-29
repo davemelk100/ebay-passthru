@@ -1,23 +1,58 @@
 import { Hono } from "hono";
+import { configFromEnv } from "../domain/ebay/config.js";
+import { parseNotificationXml } from "../domain/ebay/notifications.js";
 import { log } from "../lib/log.js";
 
 export const ebayWebhook = new Hono();
 
 // POST /webhooks/ebay
-// eBay Platform Notifications deliver SOAP/XML to this URL. The full handler
-// (signature verification, parsing, enqueue for evaluation, fast 200 ACK)
-// will be ported from ../app/api/webhooks/ebay/route.ts in the existing
-// ebay-passthru app. For v0 of the scaffold this just acks and logs so the
-// route is wired through Hono end-to-end.
+//
+// eBay Platform Notifications deliver SOAP/XML to this URL. Contract with
+// eBay: return HTTP 200 as fast as possible — non-200 is treated as "go away"
+// and the event is silently dropped (no automatic redelivery). So the
+// receiver does the cheap, deterministic work inline (parse, signature
+// verify, normalize) and pushes anything expensive (GetBestOffers enrichment
+// fallback, rule evaluation, RespondToBestOffer call) to a downstream job
+// once that pipeline lands.
 ebayWebhook.post("/", async (c) => {
-  const body = await c.req.text();
+  const xml = await c.req.text();
+  const cfg = configFromEnv();
+
+  const { notification, error } = parseNotificationXml(xml, {
+    devId: cfg.devId,
+    appId: cfg.appId,
+    certId: cfg.certId,
+  });
+
+  if (error || !notification) {
+    log.warn(
+      { route: "/webhooks/ebay", bytes: xml.length, error },
+      "could not parse eBay notification",
+    );
+    // Still 200 — eBay's redelivery model means a 4xx/5xx here just loses
+    // the event. Logging is enough for operator triage.
+    return c.json({ ok: true, parsed: false, error });
+  }
+
   log.info(
     {
       route: "/webhooks/ebay",
-      bytes: body.length,
-      contentType: c.req.header("content-type"),
+      eventName: notification.eventName,
+      timestamp: notification.timestamp,
+      itemId: notification.itemId,
+      bestOfferId: notification.bestOfferId,
+      offerPrice: notification.offerPrice,
+      currency: notification.currency,
+      buyerUserId: notification.buyerUserId,
+      signatureValid: notification.signatureValid,
     },
-    "ebay webhook received (stub)",
+    notification.signatureValid ? "notification received" : "notification received (unsigned)",
   );
-  return c.json({ ok: true, parsed: false, stub: true });
+
+  // TODO(arch): enqueue evaluation job once the rule engine + queue land.
+  return c.json({
+    ok: true,
+    eventName: notification.eventName,
+    signatureValid: notification.signatureValid,
+  });
 });
