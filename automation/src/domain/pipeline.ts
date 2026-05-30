@@ -8,7 +8,7 @@
 import { randomUUID } from "node:crypto";
 import { computeFees, type FeeBreakdown, type FeeProfile } from "./fees.js";
 import { evaluateOffer, type Decision, type OfferContext, type Rule } from "./evaluator.js";
-import type { EbayCallResult, EbayError } from "./ebay/config.js";
+import type { EbayCallResult, EbayError } from "./ebay/trading.js";
 import type { RespondToBestOfferInput } from "./ebay/respond.js";
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -231,7 +231,9 @@ function csvCell(v: unknown): string {
 export function toCsv(rows: DecisionRow[]): string {
   const header = CSV_COLUMNS.join(",");
   const data = rows
-    .map((r) => CSV_COLUMNS.map((k) => csvCell((r as Record<string, unknown>)[k])).join(","))
+    .map((r) =>
+      CSV_COLUMNS.map((k) => csvCell((r as unknown as Record<string, unknown>)[k])).join(","),
+    )
     .join("\n");
   return `${header}\n${data}\n`;
 }

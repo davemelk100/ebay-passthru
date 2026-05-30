@@ -1,5 +1,5 @@
-import type { EbayCallResult, EbayConfig } from "./config.js";
-import { callTradingApi } from "./trading.js";
+import type { EbayConfig } from "./config.js";
+import { callTradingApi, type EbayCallResult } from "./trading.js";
 
 export type RespondAction = "accept" | "decline" | "counter";
 

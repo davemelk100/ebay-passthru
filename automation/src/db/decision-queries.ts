@@ -6,6 +6,15 @@ import { and, desc, eq, gte, lte } from "drizzle-orm";
 import type { Db } from "./client.js";
 import { offerDecision } from "./schema.js";
 
+export type DecisionKind =
+  | "accept"
+  | "decline"
+  | "counter"
+  | "skipped"
+  | "would_have_accepted"
+  | "would_have_declined"
+  | "would_have_countered";
+
 export interface DecisionRow {
   id: string;
   receivedAt: Date;
@@ -25,7 +34,7 @@ export interface DecisionRow {
   estimatedNet: string;
   ruleSetVersion: number;
   matchedRuleId: string | null;
-  decision: string;
+  decision: DecisionKind;
   counterPrice: string | null;
   counterQuantity: number | null;
   dryRun: boolean;
@@ -49,7 +58,7 @@ export async function listDecisions(db: Db, filters: DecisionFilters = {}): Prom
   const conditions = [];
   if (filters.itemId) conditions.push(eq(offerDecision.itemId, filters.itemId));
   if (filters.decision) {
-    conditions.push(eq(offerDecision.decision, filters.decision as DecisionRow["decision"]));
+    conditions.push(eq(offerDecision.decision, filters.decision as DecisionKind));
   }
   if (filters.source) conditions.push(eq(offerDecision.source, filters.source));
   if (filters.ruleSetVersion !== undefined) {

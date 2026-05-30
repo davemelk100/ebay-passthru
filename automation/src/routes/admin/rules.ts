@@ -9,7 +9,7 @@ import {
   type RuleSetRow,
 } from "../../db/rule-set-queries.js";
 import { LEGACY_CARDZ_DEFAULTS } from "../../domain/fees.js";
-import { ruleSetBodySchema } from "../../domain/rules-schema.js";
+import { ruleSetBodySchema, type RuleSetBody } from "../../domain/rules-schema.js";
 import { escapeHtml, layout, pill } from "../../lib/layout.js";
 
 export function buildRulesAdmin(db: Db): Hono {
@@ -38,8 +38,11 @@ export function buildRulesAdmin(db: Db): Hono {
       body = await c.req.json();
     } catch {
       // Form-encoded POST from the "New draft" button on the list page —
-      // seed defaults so the operator can edit on the next screen.
-      const seed = await seedFromActive(db);
+      // seed defaults so the operator can edit on the next screen. The seed
+      // came from the prior published row (which the zod schema already
+      // validated when it was originally created) so re-validation here is
+      // unnecessary; cast directly to the typed body.
+      const seed = (await seedFromActive(db)) as RuleSetBody;
       const created = await createDraft(db, seed);
       return c.redirect(`/admin/rules/${created.id}`, 303);
     }
